@@ -75,6 +75,8 @@ def _parametres(fonction) -> list[tuple[str, object]]:
     ]
 
 
+# Parametres a une seule entree pour l'ASR : la Task 12 y ajoutera le moteur
+# NeMo, la Task 13 le moteur pyannote dans la liste d'en dessous.
 @pytest.mark.parametrize("implementation", [StubAsrEngine])
 def test_la_signature_de_transcribe_suit_le_protocol(implementation):
     assert _parametres(implementation.transcribe) == _parametres(AsrEngine.transcribe)
@@ -84,9 +86,7 @@ def test_la_signature_de_transcribe_suit_le_protocol(implementation):
     "implementation", [NullDiarizationEngine, StubDiarizationEngine]
 )
 def test_la_signature_de_diarize_suit_le_protocol(implementation):
-    assert _parametres(implementation.diarize) == _parametres(
-        DiarizationEngine.diarize
-    )
+    assert _parametres(implementation.diarize) == _parametres(DiarizationEngine.diarize)
 
 
 def test_isinstance_ne_controle_pas_les_signatures():
@@ -106,7 +106,8 @@ def test_isinstance_ne_controle_pas_les_signatures():
 # --- Isolation des donnees rendues par les moteurs factices ------------------
 #
 # Un stub qui partage sa liste interne se laisse corrompre par son appelant :
-# le test suivant verrait alors les mutations du precedent.
+# une route qui trie ou tronque la liste recue changerait la reponse de tous
+# les appels suivants du meme moteur -- et de tous les tests qui le partagent.
 
 
 def test_stub_asr_ne_rend_pas_sa_liste_interne():
@@ -143,15 +144,13 @@ def test_stub_diarization_copie_les_segments_a_la_construction():
 
 def test_null_diarization_rend_une_liste_neuve_a_chaque_appel():
     engine = NullDiarizationEngine()
-    engine.diarize(
+    premier_appel = engine.diarize(
         AUDIO, num_speakers=None, min_speakers=None, max_speakers=None
-    ).append(SpeakerSegment("SPEAKER_00", 0.0, 1.0))
-    assert (
-        engine.diarize(
-            AUDIO, num_speakers=None, min_speakers=None, max_speakers=None
-        )
-        == []
     )
+    premier_appel.append(SpeakerSegment("SPEAKER_00", 0.0, 1.0))
+    assert engine.diarize(
+        AUDIO, num_speakers=None, min_speakers=None, max_speakers=None
+    ) == []
 
 
 # --- Le nom expose par /health et /v1/models --------------------------------
@@ -163,6 +162,4 @@ def test_stub_diarization_a_un_nom_par_defaut():
 
 def test_les_stubs_honorent_le_nom_fourni():
     assert StubAsrEngine([], name="parakeet-factice").name == "parakeet-factice"
-    assert (
-        StubDiarizationEngine([], name="pyannote-factice").name == "pyannote-factice"
-    )
+    assert StubDiarizationEngine([], name="pyannote-factice").name == "pyannote-factice"
