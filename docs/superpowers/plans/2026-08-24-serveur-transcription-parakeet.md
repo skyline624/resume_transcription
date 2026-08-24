@@ -467,12 +467,15 @@ def assign_speaker(
     (continuite d'un tour de parole a travers un blanc de diarization), et vaut
     None s'il n'y a pas de precedent.
     """
-    if not segments:
-        return None
+    # Pas de retour anticipe sur une liste vide : la spec §7 ne prevoit aucune
+    # exception, un mot que rien ne recouvre herite de `previous`. La logique
+    # generale ci-dessous gere deja ce cas.
 
-    # Trier par debut rend la regle de depart d'egalite independante de l'ordre
-    # d'arrivee des segments.
-    ordered = sorted(segments, key=lambda s: (s.start, s.end))
+    # La cle de tri doit etre TOTALE. Avec (start, end) seuls, deux segments de
+    # bornes identiques portant des locuteurs differents ne sont pas departages :
+    # sorted etant stable, le resultat dependrait de l'ordre d'arrivee, ce que la
+    # regle de determinisme interdit.
+    ordered = sorted(segments, key=lambda s: (s.start, s.end, s.speaker))
 
     best_speaker: str | None = None
     best_overlap = 0.0
