@@ -69,15 +69,53 @@ def test_le_module_n_importe_pas_torch_au_niveau_module():
             assert not (noeud.module or "").startswith("torch")
 
 
-def test_cuda_available_rend_faux_sans_torch():
-    """Dans le venv de developpement torch est absent : la fonction doit rendre
-    False plutot que lever, sinon le serveur ne pourrait pas diagnostiquer."""
+@pytest.fixture
+def torch_absent(monkeypatch):
+    """Simule l'absence de torch, quel que soit l'environnement.
+
+    Ces fonctions doivent se comporter de la meme facon dans le venv de
+    developpement Windows, ou torch n'est pas installe, et dans le conteneur,
+    ou il l'est : ecrire `assert cuda_available() is False` reviendrait a
+    graver le poste de developpement dans le test.
+    """
+    import builtins
+
+    vrai_import = builtins.__import__
+
+    def import_qui_refuse_torch(nom, *args, **kwargs):
+        if nom == "torch" or nom.startswith("torch."):
+            raise ImportError("torch simule absent")
+        return vrai_import(nom, *args, **kwargs)
+
+    monkeypatch.delitem(__import__("sys").modules, "torch", raising=False)
+    monkeypatch.setattr(builtins, "__import__", import_qui_refuse_torch)
+
+
+def test_cuda_available_rend_faux_sans_torch(torch_absent):
+    """Sans torch, la fonction doit rendre False plutot que lever : le serveur
+    doit pouvoir diagnostiquer son environnement, pas s'y casser."""
     assert cuda_available() is False
 
 
-def test_gpu_info_rend_un_dict_vide_sans_torch():
+def test_gpu_info_rend_un_dict_vide_sans_torch(torch_absent):
     assert gpu_info() == {}
 
 
-def test_empty_cache_ne_leve_pas_sans_torch():
+def test_empty_cache_ne_leve_pas_sans_torch(torch_absent):
     empty_cache()
+
+
+def test_cuda_available_rend_toujours_un_booleen():
+    """Vrai dans les deux environnements, sans presumer duquel il s'agit."""
+    assert isinstance(cuda_available(), bool)
+
+
+def test_gpu_info_est_coherent_avec_cuda_available():
+    """Les deux fonctions doivent s'accorder : un dict rempli sans CUDA, ou
+    l'inverse, signalerait que l'une des deux ment."""
+    info = gpu_info()
+    if cuda_available():
+        assert info["vram_total_mb"] > 0
+        assert isinstance(info["name"], str) and info["name"]
+    else:
+        assert info == {}

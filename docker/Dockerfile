@@ -20,6 +20,12 @@ ENV PYTHONUNBUFFERED=1 \
     NUMBA_CACHE_DIR=/tmp/numba_cache \
     PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True
 
+# L'image de base expose un Python systeme marque PEP 668, donc pip refuse
+# d'installer sans cette levee. Dans un conteneur dedie a cette seule
+# application, il n'y a pas d'OS partage a proteger : lever la garde est plus
+# simple que de superposer un venv a une image qui n'en a pas besoin.
+ENV PIP_BREAK_SYSTEM_PACKAGES=1
+
 WORKDIR /app
 
 COPY docker/pin_torch.py /tmp/pin_torch.py
