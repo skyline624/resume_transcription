@@ -48,8 +48,10 @@ def plan_windows(
         windows.append(Window(index=index, start=start, end=end))
         if end >= duration_s:
             break
-        start += step
         index += 1
+        # Forme indexee plutot que start += step : aucune accumulation d'erreur
+        # flottante d'une fenetre a la suivante.
+        start = index * step
     return windows
 
 
@@ -73,18 +75,34 @@ def merge_windows(
 ) -> list[Word]:
     """Recolle les mots produits par chaque fenetre.
 
+    Precondition : les mots de per_window_words[i] sont deja en temps ABSOLU.
+    Cette fonction ne recale rien -- windows ne sert qu'a calculer les
+    frontieres. C'est a l'appelant d'appliquer offset_words(mots,
+    windows[i].start) au prealable. Des mots restes en temps relatif se
+    masseraient tous dans l'intervalle de la premiere fenetre et la fin de
+    l'enregistrement disparaitrait sans la moindre erreur.
+
     Un mot est attribue a la fenetre dont l'intervalle de frontieres contient
-    le milieu du mot. Chaque mot est donc conserve exactement une fois : ni
-    doublon dans la zone de recouvrement, ni troncature au raccord.
+    le milieu du mot. Chaque mot est ainsi conserve exactement une fois, mais
+    a une condition : que les deux fenetres du recouvrement horodatent ce mot
+    de facon identique. Elles transcrivent la zone commune independamment, donc
+    une gigue de quelques dizaines de millisecondes pres d'une frontiere suffit
+    a faire tomber le milieu du mauvais cote dans les deux fenetres (mot perdu)
+    ou du bon cote dans les deux (mot duplique). L'aval ne doit donc pas
+    traiter le "exactement une fois" comme un invariant absolu.
     """
     if len(per_window_words) != len(windows):
         raise ValueError(
             f"{len(per_window_words)} listes de mots pour {len(windows)} fenetres."
         )
+    if any(b.start < a.start for a, b in zip(windows, windows[1:])):
+        raise ValueError(
+            "Les fenetres doivent etre triees par start croissant : sinon les "
+            "frontieres ne sont plus monotones et le recollage perd et duplique "
+            "des mots sans rien signaler."
+        )
     if not windows:
         return []
-    if len(windows) == 1:
-        return list(per_window_words[0])
 
     bounds = _boundaries(windows)
     merged: list[Word] = []

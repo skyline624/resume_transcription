@@ -95,3 +95,128 @@ def test_merge_conserve_l_ordre_chronologique():
 def test_merge_rejette_un_desaccord_de_longueur():
     with pytest.raises(ValueError):
         merge_windows([[]], [Window(0, 0.0, 1.0), Window(1, 1.0, 2.0)])
+
+
+@pytest.mark.parametrize(
+    ("duration_s", "chunk_length_s", "overlap_s"),
+    [
+        (0.0, 480.0, 15.0),  # duree nulle
+        (-1.0, 480.0, 15.0),  # duree negative
+        (900.0, 0.0, 15.0),  # fenetre de longueur nulle
+        (900.0, -480.0, 15.0),  # fenetre de longueur negative
+        (900.0, 480.0, -1.0),  # recouvrement negatif
+        (900.0, 100.0, 100.0),  # recouvrement egal a la fenetre : pas nul
+        (900.0, 100.0, 150.0),  # recouvrement superieur : pas negatif
+    ],
+)
+def test_parametres_invalides_rejetes(duration_s, chunk_length_s, overlap_s):
+    """Les quatre branches de validation de plan_windows, une a une."""
+    with pytest.raises(ValueError):
+        plan_windows(duration_s, chunk_length_s, overlap_s)
+
+
+def test_recollage_multi_fenetres_restitue_toute_la_reunion():
+    """Aller-retour complet sur 5 fenetres : le cas nominal d'une longue reunion.
+
+    Deux fenetres suffisent a masquer une inversion de borne dans le calcul des
+    frontieres, car bounds[0] et bounds[-1] y sont le meme element. Il faut au
+    moins une fenetre INTERIEURE, bornee des deux cotes par des valeurs finies,
+    pour attraper la faute : elle recevrait un intervalle vide et tout le centre
+    de la reunion disparaitrait sans erreur.
+    """
+    duration_s = 2000.0
+    wins = plan_windows(duration_s, 480.0, 15.0)
+    assert len(wins) == 5
+    assert sum(1 for w in wins if 0 < w.index < len(wins) - 1) == 3
+
+    # Verite terrain : un mot de 0.6 s par seconde, en temps absolu.
+    verite = [
+        Word(f"mot{i}", float(i), i + 0.6) for i in range(int(duration_s) - 1)
+    ]
+
+    # Chaque fenetre ne rend que les mots qu'elle contient entierement, et les
+    # horodate RELATIVEMENT a son propre debut, comme le fait le modele.
+    per_window_words = [
+        offset_words(
+            [
+                Word(m.text, m.start - w.start, m.end - w.start)
+                for m in verite
+                if m.start >= w.start and m.end <= w.end
+            ],
+            w.start,
+        )
+        for w in wins
+    ]
+    # Le recouvrement doit vraiment produire des doublons a eliminer.
+    assert sum(len(mots) for mots in per_window_words) > len(verite)
+
+    out = merge_windows(per_window_words, wins)
+    assert [m.text for m in out] == [m.text for m in verite]
+    assert [m.start for m in out] == pytest.approx([m.start for m in verite])
+    assert [m.end for m in out] == pytest.approx([m.end for m in verite])
+
+
+def test_mot_pile_sur_chacune_des_frontieres_interieures():
+    """La convention semi-ouverte vaut pour toutes les frontieres, pas la seule."""
+    wins = plan_windows(2000.0, 480.0, 15.0)
+    frontieres = [(b.start + a.end) / 2.0 for a, b in zip(wins, wins[1:])]
+    assert frontieres == [472.5, 937.5, 1402.5, 1867.5]
+
+    for k, frontiere in enumerate(frontieres):
+        # milieu == frontiere exactement (bornes multiples de 0.25)
+        pile = Word("pile", frontiere - 0.25, frontiere + 0.25)
+        per_window_words = [
+            [pile] if i in (k, k + 1) else [] for i in range(len(wins))
+        ]
+        out = merge_windows(per_window_words, wins)
+        assert [w.text for w in out] == ["pile"], f"frontiere {frontiere}"
+
+
+def test_le_mot_est_attribue_par_son_milieu_pas_par_ses_bornes():
+    """Un mot a cheval sur la frontiere suit son MILIEU (spec section 6).
+
+    Compter les occurrences ne suffit pas a epingler la regle : une regle
+    fondee sur w.start ou sur w.end garderait elle aussi chaque mot une fois.
+    Chaque cas ci-dessous isole donc un mot qu'une seule fenetre a rendu, place
+    de sorte que le milieu et la borne ne designent pas la meme fenetre.
+    """
+    wins = [Window(0, 0.0, 480.0), Window(1, 465.0, 900.0)]  # frontiere 472.5
+
+    # Debut avant la frontiere mais milieu apres -> revient a la fenetre 1.
+    a_droite = Word("droite", 472.0, 473.4)  # milieu 472.7
+    assert merge_windows([[], [a_droite]], wins) == [a_droite]
+    assert merge_windows([[a_droite], []], wins) == []
+
+    # Fin apres la frontiere mais milieu avant -> revient a la fenetre 0.
+    a_gauche = Word("gauche", 471.0, 472.6)  # milieu 471.8
+    assert merge_windows([[a_gauche], []], wins) == [a_gauche]
+    assert merge_windows([[], [a_gauche]], wins) == []
+
+
+def test_merge_trie_une_fenetre_dont_les_mots_arrivent_desordonnes():
+    """Le tri final est un filet reellement sollicite, pas un no-op.
+
+    Rien dans le contrat public n'oblige l'appelant a fournir chaque liste deja
+    ordonnee ; la sortie, elle, doit etre chronologique.
+    """
+    wins = [Window(0, 0.0, 480.0), Window(1, 465.0, 900.0)]
+    w0 = [Word("b", 200.0, 201.0), Word("a", 10.0, 11.0)]
+    w1 = [Word("d", 800.0, 801.0), Word("c", 600.0, 601.0)]
+    out = merge_windows([w0, w1], wins)
+    assert [w.text for w in out] == ["a", "b", "c", "d"]
+
+
+def test_merge_trie_aussi_le_cas_a_une_seule_fenetre():
+    """Une seule fenetre suit le meme chemin que n fenetres, tri compris."""
+    wins = [Window(0, 0.0, 100.0)]
+    desordre = [Word("b", 3.0, 4.0), Word("a", 1.0, 2.0)]
+    out = merge_windows([desordre], wins)
+    assert [w.text for w in out] == ["a", "b"]
+
+
+def test_merge_rejette_des_fenetres_non_triees():
+    """Sur des fenetres desordonnees les frontieres cessent d'etre monotones,
+    ce qui produirait pertes et doublons silencieux plutot qu'une erreur."""
+    desordre = [Window(1, 465.0, 900.0), Window(0, 0.0, 480.0)]
+    with pytest.raises(ValueError):
+        merge_windows([[], []], desordre)
