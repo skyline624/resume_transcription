@@ -44,4 +44,26 @@ asyncio_mode = "auto"
 # avertissement devient un echec. Un filtre d'exception se justifie sur un
 # message precis, jamais sur une classe entiere -- ce dernier avalerait aussi
 # la prochaine depreciation, c'est-a-dire exactement le signal recherche.
-filterwarnings = ["error"]
+filterwarnings = [
+    "error",
+    # torchcodec ne se charge pas dans l'image (libtorchcodec_image.so
+    # introuvable) et pyannote previent que son decodage integre echouera.
+    # Nous ne l'utilisons pas : l'audio est decode par ffmpeg puis passe en
+    # memoire sous la forme {"waveform", "sample_rate"}, ce que le message
+    # recommande lui-meme.
+    #
+    # Les filtres ci-dessous visent des MODULES TIERS, jamais une classe
+    # d'avertissement entiere : la politique doit discipliner notre code, pas
+    # nous interdire d'utiliser des bibliotheques qui vieillissent. Un
+    # avertissement emis par transcription_server reste un echec.
+    #
+    # Note : cibler ces messages par leur texte ne fonctionne pas. Celui de
+    # pyannote commence par un saut de ligne, et dans les filtres de warnings
+    # Python « . » ne correspond pas a « \n » — le motif ne peut jamais
+    # s'ancrer. Le module d'origine est le critere fiable.
+    "default::UserWarning:pyannote.audio.core.io",
+    # NeMo 3.0 appelle torch.jit.script, deprecie par torch 2.11.
+    "default::DeprecationWarning:torch.jit._script",
+    # PYTORCH_CUDA_ALLOC_CONF passe par une API que torch 2.11 deprecie.
+    "default::FutureWarning:torch.cuda.memory",
+]

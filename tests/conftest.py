@@ -20,6 +20,8 @@ fixture de portee module ou session serait instanciee avant, donc silencieusemen
 effacee ; l'echec se presenterait comme un « field required » trompeur.
 """
 
+import os
+
 import pytest
 
 from transcription_server.config import get_settings
@@ -60,6 +62,36 @@ def environnement_neutre(monkeypatch):
         # forme majuscule. Sous Windows os.environ normalise deja, ce second
         # delenv y est simplement sans effet.
         monkeypatch.delenv(nom.lower(), raising=False)
+
+
+# Photographie de l'environnement prise a l'import de ce module, donc AVANT
+# que la moindre purge n'ait lieu. C'est la seule facon de rendre a un test la
+# configuration reelle du conteneur : une fois `environnement_neutre` passee,
+# l'information est perdue.
+_ENVIRONNEMENT_INITIAL = {
+    nom: os.environ[nom]
+    for nom in VARIABLES_DE_CONFIGURATION
+    if nom in os.environ
+}
+
+
+@pytest.fixture
+def configuration_reelle(monkeypatch, environnement_neutre):
+    """Rend a un test la configuration ambiante, HF_TOKEN compris.
+
+    Reservee aux tests qui parlent aux vrais modeles : eux ont besoin du token
+    et du peripherique reels, ce que la purge leur retire precisement.
+
+    Declarer `environnement_neutre` en argument n'est pas decoratif : c'est ce
+    qui garantit que la restauration a lieu APRES la purge. Une fixture de
+    portee module ou session serait instanciee avant, donc silencieusement
+    effacee — et l'echec se presenterait comme un « field required » trompeur,
+    exactement ce qui est arrive aux premiers tests GPU.
+    """
+    for nom, valeur in _ENVIRONNEMENT_INITIAL.items():
+        monkeypatch.setenv(nom, valeur)
+    get_settings.cache_clear()
+    return _ENVIRONNEMENT_INITIAL
 
 
 @pytest.fixture(autouse=True)

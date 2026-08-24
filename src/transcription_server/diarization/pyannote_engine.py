@@ -16,6 +16,22 @@ from transcription_server.domain import SpeakerSegment
 logger = logging.getLogger(__name__)
 
 
+def _annotation_de(sortie):
+    """Rend l'`Annotation` portee par la sortie du pipeline.
+
+    pyannote 4 n'appelle plus directement une `Annotation` : il enveloppe son
+    resultat dans un `DiarizeOutput`, dataclass portant `speaker_diarization`,
+    `exclusive_speaker_diarization` et `speaker_embeddings`. La branche 3.x
+    rendait l'`Annotation` telle quelle.
+
+    On retient `speaker_diarization`, qui autorise la parole simultanee :
+    l'attribution des mots se fait par recouvrement maximal, donc les
+    chevauchements sont deja traites en aval, et les ecraser ici perdrait
+    l'information sans rien simplifier.
+    """
+    return getattr(sortie, "speaker_diarization", sortie)
+
+
 class PyannoteEngine:
     """Separe les locuteurs avec un pipeline pyannote deja charge."""
 
@@ -59,10 +75,11 @@ class PyannoteEngine:
             if max_speakers is not None:
                 options["max_speakers"] = max_speakers
 
-        annotation = self._pipeline(
+        sortie = self._pipeline(
             {"waveform": forme_onde, "sample_rate": SAMPLE_RATE},
             **options,
         )
+        annotation = _annotation_de(sortie)
 
         segments = [
             SpeakerSegment(

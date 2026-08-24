@@ -13,6 +13,10 @@ services:
       - ./models:/app/models
       - ./src:/app/src
       - ./tests:/app/tests
+      # Monte aussi la configuration : sans elle, le conteneur lirait le
+      # pyproject.toml fige dans l'image et ignorerait toute modification des
+      # options pytest, ce qui donne des resultats incomprehensibles.
+      - ./pyproject.toml:/app/pyproject.toml:ro
     command:
       - "uvicorn"
       - "transcription_server.app:build_app"

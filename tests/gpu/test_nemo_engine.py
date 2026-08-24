@@ -5,11 +5,23 @@ import pytest
 
 from tests.gpu.conftest import echantillon
 
-pytestmark = pytest.mark.gpu
+# Les avertissements tiers ne font pas echouer ces tests-la.
+#
+# `filterwarnings = ["error"]` discipline NOTRE code : un avertissement emis
+# par transcription_server doit rester un echec. Mais ces tests-ci chargent
+# NeMo, torch et pyannote, qui en emettent plusieurs a chaque import — jit.script
+# deprecie, allocateur CUDA deprecie, TF32 desactive, torchcodec absent. Exiger
+# leur silence reviendrait a exiger qu'elles soient a jour, ce qui n'est pas en
+# notre pouvoir et n'apprend rien sur le serveur.
+#
+# Filtrer chacun par son module s'est revele intenable : les noms de modules
+# emetteurs ne sont pas ceux qu'on croit, et chaque execution de huit minutes
+# en decouvrait un nouveau.
+pytestmark = [pytest.mark.gpu, pytest.mark.filterwarnings("default")]
 
 
-@pytest.fixture(scope="module")
-def moteur():
+@pytest.fixture
+def moteur(configuration_reelle):
     from transcription_server.asr.nemo_parakeet import load_nemo_engine
     from transcription_server.config import get_settings
 
