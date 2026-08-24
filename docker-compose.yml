@@ -1,0 +1,31 @@
+services:
+  transcription:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile
+    image: transcription-parakeet:latest
+    env_file: .env
+    # 127.0.0.1 uniquement : le serveur n'est pas joignable depuis le reseau
+    # local. L'exposer plus largement exigerait d'ajouter une authentification.
+    ports:
+      - "127.0.0.1:8000:8000"
+    volumes:
+      # Cache des poids HuggingFace : evite de retelecharger 2,6 Go a chaque
+      # reconstruction, et garde le token hors des couches de l'image.
+      - ./models:/app/models
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 10s
+      # Le premier demarrage telecharge ~2,6 Go de poids : sans cette fenetre,
+      # Compose declarerait le conteneur en echec avant qu'il ait fini.
+      start_period: 600s
+      retries: 3
+    restart: unless-stopped

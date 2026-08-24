@@ -1,0 +1,23 @@
+# Surcharge de developpement : code monte depuis l'hote, rechargement a chaud.
+#   docker compose -f docker-compose.yml -f docker-compose.dev.yml up
+#
+# A savoir : --reload relance le processus a chaque sauvegarde dans src/, ce
+# qui recharge les modeles sur le GPU — environ une minute. Poser
+# ENABLE_DIARIZATION=false pendant le developpement divise cette attente.
+#
+# Pas de profil Compose ici : un profil demarrerait le service sans profil EN
+# PLUS de celui du profil demande, et les deux se disputeraient le port 8000.
+services:
+  transcription:
+    volumes:
+      - ./models:/app/models
+      - ./src:/app/src
+      - ./tests:/app/tests
+    command:
+      - "uvicorn"
+      - "transcription_server.app:build_app"
+      - "--factory"
+      - "--host=0.0.0.0"
+      - "--port=8000"
+      - "--reload"
+      - "--reload-dir=/app/src"
