@@ -24,6 +24,26 @@ Ces contraintes s'appliquent à **toutes** les tâches. Valeurs reprises telles 
 - **Étiquettes de locuteurs** : `SPEAKER_00`, `SPEAKER_01`, … Jamais de noms réels.
 - **`.env` sans BOM**, jamais commité, jamais inscrit dans une couche d'image.
 - **Publication réseau** : `127.0.0.1:8000` côté hôte uniquement.
+- **Ne jamais sérialiser une `ValidationError` pydantic.** Mesuré en Task 5 :
+  `str(e)` tronque à 11 caractères, mais **`e.errors()` et `e.json()`
+  contiennent le `HF_TOKEN` intégral**, et ni `SecretStr` ni
+  `Field(repr=False)` n'y changent quoi que ce soit — un
+  `model_validator(mode="after")` attache le dictionnaire d'entrée brut.
+  Conséquence pour les tâches 9, 10 et 14 : l'idiome FastAPI courant
+  `HTTPException(422, detail=e.errors())` **divulguerait le token dans une
+  réponse HTTP**. N'utiliser que `e.errors(include_input=False)`, et ne jamais
+  écrire `.errors()` ni `.json()` dans un log ou un corps de réponse.
+  Même interdiction pour **`settings.model_dump()` et `model_dump_json()`**,
+  qui exposent eux aussi le token intégral. En revanche `repr(settings)`,
+  `str(settings)` et les f-strings sont sûrs depuis la Task 5
+  (`Field(repr=False)` sur `hf_token`, vérifié sous `pytest --showlocals`).
+  **Le masquage protège l'objet, pas ses copies** : mesuré en Task 5, un
+  `jeton = settings.hf_token` réexpose la valeur sous `--showlocals`. Dans les
+  tâches 9, 10, 13 et 14, ne jamais extraire le token dans une variable locale
+  ni le passer à une fonction susceptible d'apparaître dans une trace —
+  transmettre `settings` et lire l'attribut au point d'usage.
+- **Français accentué** dans toute chaîne destinée à un humain, messages
+  d'erreur compris.
 
 ### Prérequis avant la Task 1
 
