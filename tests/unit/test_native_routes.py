@@ -916,3 +916,57 @@ async def test_le_verrou_gpu_serialise_les_transcriptions():
     assert [r.status_code for r in reponses] == [200, 200]
     assert verrou.attentes == 1
     assert moteur.maximum == 1
+
+
+def test_le_parametre_channels_est_transmis_au_pipeline(client, monkeypatch):
+    """Sans ce test, un `channels=split` accepte puis ignore rendrait une
+    transcription repliee en mono sans que rien ne le signale."""
+    from transcription_server.api import native_routes
+
+    recu = []
+    vrai_run = native_routes.run_pipeline
+
+    def espion(**kwargs):
+        recu.append(kwargs["request"].channel_mode)
+        return vrai_run(**kwargs)
+
+    monkeypatch.setattr(native_routes, "run_pipeline", espion)
+    client.post(
+        "/transcribe",
+        files={"file": ("test.wav", _wav_bytes(), "audio/wav")},
+        data={"channels": "split"},
+    )
+    assert recu == ["split"]
+
+
+def test_channels_vaut_mix_par_defaut(client, monkeypatch):
+    from transcription_server.api import native_routes
+
+    recu = []
+    vrai_run = native_routes.run_pipeline
+
+    def espion(**kwargs):
+        recu.append(kwargs["request"].channel_mode)
+        return vrai_run(**kwargs)
+
+    monkeypatch.setattr(native_routes, "run_pipeline", espion)
+    client.post(
+        "/transcribe", files={"file": ("test.wav", _wav_bytes(), "audio/wav")}
+    )
+    assert recu == ["mix"]
+
+
+def test_channels_inconnu_est_rejete(client):
+    response = client.post(
+        "/transcribe",
+        files={"file": ("test.wav", _wav_bytes(), "audio/wav")},
+        data={"channels": "quadriphonie"},
+    )
+    assert response.status_code == 422
+
+
+def test_la_reponse_dit_combien_de_canaux_ont_ete_transcrits(client):
+    corps = client.post(
+        "/transcribe", files={"file": ("test.wav", _wav_bytes(), "audio/wav")}
+    ).json()
+    assert corps["channels_used"] == 1

@@ -1,3 +1,4 @@
+import shutil
 import struct
 import wave
 from pathlib import Path
@@ -662,3 +663,201 @@ def test_un_jeton_vide_au_milieu_d_un_tour_ne_double_pas_l_espace(short_wav):
     assert result.text == "bonjour tous"
     # Le jeton vide reste dans words : seul le rendu texte l'ecarte.
     assert len(result.turns[0].words) == 3
+
+
+# --- Mode `split` : un canal par source ---------------------------------------
+#
+# Motivation reelle : un enregistrement de reunion peut porter le micro local
+# sur une piste et les participants distants sur l'autre. Replie en mono, deux
+# paroles simultanees se superposent et le modele rend une bouillie ou les deux
+# sont perdues. Transcrire chaque canal separement les preserve toutes deux.
+
+
+def _ecrire_wav_stereo(chemin, gauche, droit, rate=16000):
+    """Ecrit un wav stereo 16 bits a partir de deux signaux float32."""
+    import numpy as np
+
+    entrelace = np.empty(len(gauche) * 2, dtype=np.int16)
+    entrelace[0::2] = (np.clip(gauche, -1, 1) * 32767).astype(np.int16)
+    entrelace[1::2] = (np.clip(droit, -1, 1) * 32767).astype(np.int16)
+    with wave.open(str(chemin), "wb") as handle:
+        handle.setnchannels(2)
+        handle.setsampwidth(2)
+        handle.setframerate(rate)
+        handle.writeframes(entrelace.tobytes())
+
+
+class _AsrSelonLeCanal:
+    """Rend des mots differents selon le niveau du signal recu.
+
+    C'est ce qui permet de verifier que chaque canal est bien transcrit
+    separement : un pipeline qui replierait tout en mono ne verrait qu'un seul
+    des deux signaux.
+    """
+
+    name = "selon-canal"
+
+    def __init__(self):
+        self.appels = []
+
+    def transcribe(self, audio, language):
+        import numpy as np
+
+        crete = float(np.abs(audio).max()) if audio.size else 0.0
+        self.appels.append(round(crete, 2))
+        if crete > 0.7:
+            return [Word("fort", 0.0, 0.5)]
+        if crete > 0.2:
+            return [Word("faible", 1.0, 1.5)]
+        return []
+
+
+@pytest.fixture
+def wav_stereo(tmp_path):
+    import numpy as np
+
+    n = 16000
+    t = np.arange(n) / 16000
+    gauche = (0.9 * np.sin(2 * np.pi * 440 * t)).astype(np.float32)
+    droit = (0.3 * np.sin(2 * np.pi * 880 * t)).astype(np.float32)
+    chemin = tmp_path / "stereo.wav"
+    _ecrire_wav_stereo(chemin, gauche, droit)
+    return chemin
+
+
+@pytest.mark.skipif(shutil.which("ffmpeg") is None, reason="ffmpeg absent du PATH")
+def test_split_transcrit_chaque_canal(wav_stereo):
+    asr = _AsrSelonLeCanal()
+    resultat = run_pipeline(
+        path=wav_stereo,
+        asr=asr,
+        diarization=NullDiarizationEngine(),
+        request=TranscriptionRequest(diarize=False, channel_mode="split"),
+        chunk_length_s=480.0,
+        chunk_overlap_s=15.0,
+        turn_gap_s=1.0,
+    )
+    assert resultat.channels_used == 2
+    assert len(asr.appels) == 2, "un appel par canal attendu"
+    assert "fort" in resultat.text and "faible" in resultat.text
+
+
+@pytest.mark.skipif(shutil.which("ffmpeg") is None, reason="ffmpeg absent du PATH")
+def test_mix_reste_le_defaut_et_ne_voit_qu_un_signal(wav_stereo):
+    asr = _AsrSelonLeCanal()
+    resultat = run_pipeline(
+        path=wav_stereo,
+        asr=asr,
+        diarization=NullDiarizationEngine(),
+        request=TranscriptionRequest(diarize=False),
+        chunk_length_s=480.0,
+        chunk_overlap_s=15.0,
+        turn_gap_s=1.0,
+    )
+    assert resultat.channels_used == 1
+    assert len(asr.appels) == 1
+
+
+@pytest.mark.skipif(shutil.which("ffmpeg") is None, reason="ffmpeg absent du PATH")
+def test_split_normalise_globalement_pas_par_canal(tmp_path):
+    """Un canal quasi muet doit le rester.
+
+    Normalise sur son propre pic, son bruit de fond monterait au niveau de la
+    parole et le modele hallucinerait des mots dessus. C'est le cas courant
+    du micro de celui qui parle peu.
+    """
+    import numpy as np
+
+    n = 16000
+    t = np.arange(n) / 16000
+    fort = (0.9 * np.sin(2 * np.pi * 440 * t)).astype(np.float32)
+    presque_muet = (0.001 * np.sin(2 * np.pi * 880 * t)).astype(np.float32)
+    chemin = tmp_path / "desequilibre.wav"
+    _ecrire_wav_stereo(chemin, fort, presque_muet)
+
+    asr = _AsrSelonLeCanal()
+    run_pipeline(
+        path=chemin,
+        asr=asr,
+        diarization=NullDiarizationEngine(),
+        request=TranscriptionRequest(diarize=False, channel_mode="split"),
+        chunk_length_s=480.0,
+        chunk_overlap_s=15.0,
+        turn_gap_s=1.0,
+    )
+    assert asr.appels[0] > 0.7, "le canal fort doit rester fort"
+    assert asr.appels[1] < 0.2, "le canal muet ne doit pas etre amplifie"
+
+
+@pytest.mark.skipif(shutil.which("ffmpeg") is None, reason="ffmpeg absent du PATH")
+def test_split_supprime_les_doublons_entre_canaux(tmp_path):
+    """Deux pistes portant le meme son ne doivent pas doubler la transcription."""
+    import numpy as np
+
+    n = 16000
+    t = np.arange(n) / 16000
+    identique = (0.9 * np.sin(2 * np.pi * 440 * t)).astype(np.float32)
+    chemin = tmp_path / "identique.wav"
+    _ecrire_wav_stereo(chemin, identique, identique)
+
+    class AsrConstant:
+        name = "constant"
+
+        def transcribe(self, audio, language):
+            return [Word("bonjour", 0.0, 0.5)]
+
+    resultat = run_pipeline(
+        path=chemin,
+        asr=AsrConstant(),
+        diarization=NullDiarizationEngine(),
+        request=TranscriptionRequest(diarize=False, channel_mode="split"),
+        chunk_length_s=480.0,
+        chunk_overlap_s=15.0,
+        turn_gap_s=1.0,
+    )
+    assert resultat.text == "bonjour", f"doublon non supprime : {resultat.text!r}"
+
+
+@pytest.mark.skipif(shutil.which("ffmpeg") is None, reason="ffmpeg absent du PATH")
+def test_split_renumerote_les_locuteurs_entre_canaux(wav_stereo):
+    """Chaque canal repart de SPEAKER_00 : sans decalage, le premier locuteur
+    du canal 1 se confondrait avec celui du canal 0."""
+
+    class DiarConstante:
+        name = "constante"
+
+        def diarize(self, audio, num_speakers, min_speakers, max_speakers):
+            return [SpeakerSegment("SPEAKER_00", 0.0, 2.0)]
+
+    class AsrConstant:
+        name = "constant"
+
+        def transcribe(self, audio, language):
+            return [Word("mot", 0.1, 0.4)]
+
+    resultat = run_pipeline(
+        path=wav_stereo,
+        asr=AsrConstant(),
+        diarization=DiarConstante(),
+        request=TranscriptionRequest(diarize=True, channel_mode="split"),
+        chunk_length_s=480.0,
+        chunk_overlap_s=15.0,
+        turn_gap_s=1.0,
+    )
+    assert resultat.speakers == ["SPEAKER_00", "SPEAKER_01"]
+
+
+@pytest.mark.skipif(shutil.which("ffmpeg") is None, reason="ffmpeg absent du PATH")
+def test_split_sur_un_fichier_mono_se_comporte_comme_mix(short_wav):
+    asr = _AsrSelonLeCanal()
+    resultat = run_pipeline(
+        path=short_wav,
+        asr=asr,
+        diarization=NullDiarizationEngine(),
+        request=TranscriptionRequest(diarize=False, channel_mode="split"),
+        chunk_length_s=480.0,
+        chunk_overlap_s=15.0,
+        turn_gap_s=1.0,
+    )
+    assert resultat.channels_used == 1
+    assert len(asr.appels) == 1

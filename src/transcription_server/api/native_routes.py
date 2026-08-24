@@ -17,7 +17,11 @@ from transcription_server.api.schemas import (
 from transcription_server.audio import AudioDecodeError
 from transcription_server.diarization.engine import NullDiarizationEngine
 from transcription_server.formatting import to_dialogue, to_plain_text, to_srt, to_vtt
-from transcription_server.pipeline import TranscriptionRequest, run_pipeline
+from transcription_server.pipeline import (
+    ChannelMode,
+    TranscriptionRequest,
+    run_pipeline,
+)
 from transcription_server.state import AppState, get_state
 
 logger = logging.getLogger(__name__)
@@ -102,6 +106,7 @@ async def transcribe(
     max_speakers: Annotated[int | None, Form()] = None,
     word_timestamps: Annotated[bool, Form()] = True,
     response_format: Annotated[ResponseFormat, Form()] = "json",
+    channels: Annotated[ChannelMode, Form()] = "mix",
 ):
     if num_speakers is not None and (
         min_speakers is not None or max_speakers is not None
@@ -144,6 +149,7 @@ async def transcribe(
                 request=TranscriptionRequest(
                     language=language,
                     diarize=should_diarize,
+                    channel_mode=channels,
                     num_speakers=num_speakers,
                     min_speakers=min_speakers,
                     max_speakers=max_speakers,

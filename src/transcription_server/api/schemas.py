@@ -29,6 +29,10 @@ class TranscriptionOut(BaseModel):
     speakers: list[str] = Field(default_factory=list)
     turns: list[TurnOut] = Field(default_factory=list)
     timing: dict[str, float] = Field(default_factory=dict)
+    #: Nombre de canaux transcrits separement. 1 en mode `mix`.
+    #: Expose pour que l'appelant sache ce que le serveur a fait de son
+    #: fichier, plutot que de devoir le deduire.
+    channels_used: int = 1
 
 
 class HealthOut(BaseModel):

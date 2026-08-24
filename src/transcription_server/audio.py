@@ -27,8 +27,15 @@ class AudioDecodeError(Exception):
     """L'audio n'a pas pu etre decode. Correspond a un HTTP 400."""
 
 
-def decode_to_pcm(path: str | Path, sample_rate: int = SAMPLE_RATE) -> np.ndarray:
-    """Decode un fichier audio en float32 mono, normalise dans [-1, 1]."""
+def _decoder_flux(
+    path: str | Path, sample_rate: int, canaux: int
+) -> np.ndarray:
+    """Rend le flux brut rendu par ffmpeg, entrelace si `canaux` > 1.
+
+    Partage par `decode_to_pcm` et `decode_channels` : la ligne de commande,
+    les gardes sur le code de retour et la troncature valent a l'identique
+    quel que soit le nombre de canaux demande.
+    """
     source = Path(path)
     if not source.exists():
         raise AudioDecodeError(f"Fichier introuvable : {source}")
@@ -50,7 +57,7 @@ def decode_to_pcm(path: str | Path, sample_rate: int = SAMPLE_RATE) -> np.ndarra
         "-i", str(source),
         "-f", "f32le",       # float32 little-endian brut
         "-acodec", "pcm_f32le",
-        "-ac", "1",          # mono
+        "-ac", str(canaux),
         "-ar", str(sample_rate),
         "-",
     ]
@@ -80,6 +87,12 @@ def decode_to_pcm(path: str | Path, sample_rate: int = SAMPLE_RATE) -> np.ndarra
     pcm = np.frombuffer(result.stdout, dtype=np.float32)
     if pcm.size == 0:
         raise AudioDecodeError("Le fichier ne contient aucun échantillon audio.")
+    return pcm
+
+
+def decode_to_pcm(path: str | Path, sample_rate: int = SAMPLE_RATE) -> np.ndarray:
+    """Decode un fichier audio en float32 mono, normalise dans [-1, 1]."""
+    pcm = _decoder_flux(path, sample_rate, canaux=1)
 
     # Equivalent de np.abs(pcm).max() sans materialiser un second tableau de
     # la taille du PCM, et propageant NaN et infinis a l'identique.
@@ -110,6 +123,75 @@ def decode_to_pcm(path: str | Path, sample_rate: int = SAMPLE_RATE) -> np.ndarra
     # la branche ci-dessus, et libere le buffer de sortie entier -- qu'une
     # seule fenetre decoupee suffirait sinon a maintenir en vie.
     return pcm.copy()
+
+
+def probe_channels(path: str | Path) -> int:
+    """Nombre de canaux du premier flux audio, via ffprobe."""
+    source = Path(path)
+    if not source.exists():
+        raise AudioDecodeError(f"Fichier introuvable : {source}")
+    if shutil.which("ffprobe") is None:
+        raise AudioDecodeError("ffprobe est introuvable dans le PATH.")
+
+    commande = [
+        "ffprobe",
+        "-v", "error",
+        "-select_streams", "a:0",
+        "-show_entries", "stream=channels",
+        "-of", "default=noprint_wrappers=1:nokey=1",
+        "-protocol_whitelist", "file",
+        str(source),
+    ]
+    resultat = subprocess.run(
+        commande, capture_output=True, check=False, stdin=subprocess.DEVNULL
+    )
+    if resultat.returncode != 0:
+        detail = resultat.stderr.decode("utf-8", "replace").strip()[:_DETAIL_MAX]
+        raise AudioDecodeError(f"ffprobe n'a pas pu lire le fichier : {detail}")
+    try:
+        return int(resultat.stdout.decode("utf-8", "replace").strip().splitlines()[0])
+    except (ValueError, IndexError) as exc:
+        raise AudioDecodeError(
+            "ffprobe n'a rapporté aucun nombre de canaux exploitable."
+        ) from exc
+
+
+def decode_channels(
+    path: str | Path, sample_rate: int = SAMPLE_RATE
+) -> list[np.ndarray]:
+    """Decode un fichier en preservant ses canaux, un tableau mono par canal.
+
+    Sur un fichier mono, rend une liste d'un seul element — identique a ce que
+    donne `decode_to_pcm`.
+
+    **La normalisation est globale, jamais par canal.** Un enregistrement de
+    reunion porte couramment un canal quasi muet (le micro de celui qui parle
+    peu) : le normaliser sur son propre pic amplifierait son bruit de fond
+    jusqu'au niveau de la parole, et le modele hallucinerait des mots dessus.
+    Avec un pic commun, un canal vide reste vide et ne produit aucun mot — sans
+    qu'aucun seuil de silence n'ait a etre choisi.
+    """
+    nb_canaux = probe_channels(path)
+    if nb_canaux < 1:
+        raise AudioDecodeError(f"Nombre de canaux invalide : {nb_canaux}.")
+    if nb_canaux == 1:
+        return [decode_to_pcm(path, sample_rate)]
+
+    entrelace = _decoder_flux(path, sample_rate, nb_canaux)
+    # ffmpeg entrelace les canaux echantillon par echantillon.
+    trames = entrelace.reshape(-1, nb_canaux)
+
+    pic = float(max(-entrelace.min(), entrelace.max()))
+    if not np.isfinite(pic):
+        raise AudioDecodeError(
+            "Le fichier contient des échantillons non finis (NaN ou infini)."
+        )
+    facteur = pic if pic > 1.0 else 1.0
+
+    return [
+        np.ascontiguousarray(trames[:, indice] / facteur, dtype=np.float32)
+        for indice in range(nb_canaux)
+    ]
 
 
 def duration_seconds(pcm: np.ndarray, sample_rate: int = SAMPLE_RATE) -> float:
