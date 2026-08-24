@@ -17,7 +17,14 @@ class AsrEngine(Protocol):
         ...
 
     def transcribe(self, audio: np.ndarray, language: str | None) -> list[Word]:
-        """Rend les mots avec des timestamps relatifs au debut de `audio`."""
+        """Rend les mots avec des timestamps relatifs au debut de `audio`.
+
+        Les mots sortent tries par ordre chronologique croissant. Ce n'est pas
+        un detail d'implementation : `alignment.group_into_turns` en fait une
+        precondition explicite et, sur une entree desordonnee, ne coupe plus
+        aucun tour et rend un resultat silencieusement faux. Toute
+        implementation reelle doit donc trier avant de rendre.
+        """
         ...
 
 
