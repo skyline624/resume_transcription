@@ -102,19 +102,17 @@ def _write_float_wav(path: Path, samples, rate: int = SAMPLE_RATE) -> None:
     path.write_bytes(header + data)
 
 
-def _write_stereo_sine_wav(path: Path, seconds: float = 1.0, rate: int = SAMPLE_RATE):
+def _write_stereo_sine_wav(
+    path: Path, seconds: float = 1.0, rate: int = SAMPLE_RATE
+) -> None:
     """Ecrit un wav stereo 16 bits dont les deux voies portent le meme sinus."""
     frames = int(seconds * rate)
+    voie = [int(20000 * np.sin(2 * np.pi * 440 * i / rate)) for i in range(frames)]
     with wave.open(str(path), "wb") as f:
         f.setnchannels(2)
         f.setsampwidth(2)
         f.setframerate(rate)
-        f.writeframes(
-            b"".join(
-                struct.pack("<hh", *((int(20000 * np.sin(2 * np.pi * 440 * i / rate)),) * 2))
-                for i in range(frames)
-            )
-        )
+        f.writeframes(b"".join(struct.pack("<hh", v, v) for v in voie))
 
 
 def test_decode_ramene_un_pic_superieur_a_un_dans_les_bornes(tmp_path):
