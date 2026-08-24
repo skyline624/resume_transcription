@@ -95,7 +95,6 @@ def test_device_et_compute_type_alternatifs_sont_acceptes():
 @pytest.mark.parametrize(
     "champ, valeur",
     [
-        ("chunk_length_s", 0.0),
         ("chunk_overlap_s", -1.0),
         ("turn_gap_s", -1.0),
         ("port", 0),
@@ -108,25 +107,48 @@ def test_valeurs_hors_bornes_sont_rejetees(champ, valeur):
         Settings(_env_file=None, hf_token=TOKEN, **{champ: valeur})
 
 
+def test_borne_positive_de_chunk_length_s():
+    # chunk_length_s <= 0 est deja rejete par la regle de coherence, puisque
+    # chunk_overlap_s >= 0 >= chunk_length_s : la borne gt=0 n'est donc jamais
+    # la cause unique du rejet. Pour l'atteindre, on invalide aussi le
+    # recouvrement : la validation de champ echoue alors avant le validateur de
+    # modele, et l'erreur nommee est bien celle de la borne.
+    with pytest.raises(ValidationError) as capture:
+        Settings(
+            _env_file=None,
+            hf_token=TOKEN,
+            chunk_length_s=0.0,
+            chunk_overlap_s=-1.0,
+        )
+    # include_input=False : sans lui, les valeurs d'entree -- dont le token --
+    # figureraient dans le message affiche si l'assertion echouait.
+    fautes = {
+        (faute["loc"], faute["type"])
+        for faute in capture.value.errors(include_input=False)
+    }
+    assert (("chunk_length_s",), "greater_than") in fautes
+
+
+def test_token_vide_est_traite_comme_absent():
+    # .env.example livre `HF_TOKEN=` vide avec ENABLE_DIARIZATION=true : copier
+    # l'exemple sans remplir le token est la mauvaise configuration la plus
+    # probable du projet, et c'est celle que la regle doit attraper.
+    with pytest.raises(ValidationError):
+        Settings(_env_file=None, enable_diarization=True, hf_token="")
+
+
 def _ecrire_env(repertoire: Path) -> None:
     (repertoire / ".env").write_text(
         "HF_TOKEN=hf_depuis_le_fichier\nPORT=9001\n", encoding="utf-8"
     )
 
 
-@pytest.fixture
-def cache_get_settings_vide():
-    """get_settings est memoisee : on vide son cache avant et apres, sinon
-    l'instance construite ici fuirait vers les tests suivants."""
-    get_settings.cache_clear()
-    yield
-    get_settings.cache_clear()
-
-
 def test_valeurs_lues_depuis_le_fichier_env(tmp_path, monkeypatch):
     # Seuls ce test et le suivant construisent Settings sans _env_file : ils
-    # verifient justement que le .env par defaut est lu. L'isolation vient du
-    # chdir, qui met le .env reel du depot hors de portee.
+    # verifient justement que le .env par defaut est lu. Leur isolation tient a
+    # deux verrous, car le dotenv n'est pas la seule source : le chdir met le
+    # .env reel du depot hors de portee, et la fixture environnement_neutre de
+    # tests/conftest.py retire les variables ambiantes, qui priment dessus.
     _ecrire_env(tmp_path)
     monkeypatch.chdir(tmp_path)
     s = Settings()
@@ -134,7 +156,7 @@ def test_valeurs_lues_depuis_le_fichier_env(tmp_path, monkeypatch):
     assert s.port == 9001
 
 
-def test_get_settings_est_memoisee(tmp_path, monkeypatch, cache_get_settings_vide):
+def test_get_settings_est_memoisee(tmp_path, monkeypatch):
     _ecrire_env(tmp_path)
     monkeypatch.chdir(tmp_path)
     premier = get_settings()

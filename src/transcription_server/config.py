@@ -40,11 +40,11 @@ class Settings(BaseSettings):
     def _check_coherence(self) -> "Settings":
         if self.chunk_overlap_s >= self.chunk_length_s:
             raise ValueError(
-                "CHUNK_OVERLAP_S doit etre strictement inferieur a CHUNK_LENGTH_S."
+                "CHUNK_OVERLAP_S doit être strictement inférieur à CHUNK_LENGTH_S."
             )
         if self.enable_diarization and not self.hf_token:
             raise ValueError(
-                "ENABLE_DIARIZATION=true exige un HF_TOKEN. Creez un token de "
+                "ENABLE_DIARIZATION=true exige un HF_TOKEN. Créez un token de "
                 "type read sur huggingface.co et acceptez les conditions de "
                 "https://huggingface.co/pyannote/speaker-diarization-community-1 "
                 "ou mettez ENABLE_DIARIZATION=false."
