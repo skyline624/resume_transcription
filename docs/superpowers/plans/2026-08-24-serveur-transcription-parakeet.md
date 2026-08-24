@@ -2939,8 +2939,6 @@ def load_nemo_engine(
     import nemo.collections.asr as nemo_asr
     import torch
 
-    from transcription_server.runtime import torch_dtype
-
     logger.info("Chargement du modele ASR %s...", model_name)
     model = nemo_asr.models.ASRModel.from_pretrained(model_name=model_name)
     model = model.to(torch.device(device))
@@ -3224,7 +3222,6 @@ Ajouter ces imports en tête du fichier :
 ```python
 import logging
 
-from transcription_server.asr.engine import StubAsrEngine  # noqa: F401  (tests)
 from transcription_server.diarization.engine import NullDiarizationEngine
 from transcription_server.runtime import cuda_available, gpu_info, resolve_device
 
@@ -3340,7 +3337,7 @@ git commit -m "feat: chargement des moteurs au demarrage et point d'entree"
 ## Task 15: Conteneurisation
 
 **Files:**
-- Create: `docker/Dockerfile`, `docker/pin_torch.py`, `docker/entrypoint.sh`, `docker-compose.yml`
+- Create: `docker/Dockerfile`, `docker/pin_torch.py`, `docker/entrypoint.sh`, `docker-compose.yml`, `docker-compose.dev.yml`
 
 **Interfaces:**
 - Consumes: `main.main()`, `pyproject.toml` (extra `gpu`).
@@ -3379,8 +3376,7 @@ COPY src/ ./src/
 COPY docker/pin_torch.py /tmp/pin_torch.py
 RUN python /tmp/pin_torch.py /tmp/constraints.txt
 
-RUN pip install --no-cache-dir -c /tmp/constraints.txt -e ".[gpu]" \
- && pip install --no-cache-dir -c /tmp/constraints.txt -e ".[dev]"
+RUN pip install --no-cache-dir -c /tmp/constraints.txt -e ".[gpu,dev]"
 
 COPY docker/entrypoint.sh /usr/local/bin/entrypoint.sh
 RUN chmod +x /usr/local/bin/entrypoint.sh
@@ -3389,6 +3385,9 @@ COPY tests/ ./tests/
 
 EXPOSE 8000
 ENTRYPOINT ["/usr/local/bin/entrypoint.sh"]
+# CMD indispensable : l'entrypoint fait `exec "$@"` sous `set -u`, donc un
+# `docker run` sans commande echouerait sur une variable non liee.
+CMD ["python", "-m", "transcription_server.main"]
 ```
 
 - [ ] **Step 2: Écrire `docker/pin_torch.py`**
@@ -3473,11 +3472,25 @@ services:
       start_period: 300s
       retries: 3
     restart: unless-stopped
-    command: ["python", "-m", "transcription_server.main"]
+```
 
-  transcription-dev:
-    extends: transcription
-    profiles: ["dev"]
+`start_period: 300s` laisse au premier démarrage le temps de télécharger les
+2,6 Go de modèles sans que Compose déclare le conteneur en échec.
+
+Aucune `command` n'est déclarée : le `CMD` du Dockerfile lance déjà le serveur.
+
+**Pas de profil `dev`.** Compose démarre les services sans profil **en plus** de
+ceux du profil demandé, donc `--profile dev` lancerait deux conteneurs sur
+`127.0.0.1:8000` et le bind échouerait. Le développement passe par un fichier
+d'override, à l'étape suivante.
+
+- [ ] **Step 5: Écrire `docker-compose.dev.yml`**
+
+```yaml
+# Surcharge de developpement : code monte depuis l'hote, rechargement a chaud.
+# Usage : docker compose -f docker-compose.yml -f docker-compose.dev.yml up
+services:
+  transcription:
     volumes:
       - ./models:/app/models
       - ./src:/app/src
@@ -3492,24 +3505,33 @@ services:
       - "--reload-dir=/app/src"
 ```
 
-`start_period: 300s` laisse au premier démarrage le temps de télécharger les
-2,6 Go de modèles sans que Compose déclare le conteneur en échec.
+**À savoir** : `--reload` relance le processus a chaque sauvegarde dans `src/`,
+ce qui **recharge les deux modeles sur le GPU** — environ une minute. Poser
+`ENABLE_DIARIZATION=false` dans `.env` pendant le developpement divise cette
+attente. Le README doit le dire.
 
-- [ ] **Step 5: Construire l'image**
+- [ ] **Step 6: Valider la syntaxe Compose avant de construire**
+
+Run: `docker compose config -q` puis
+`docker compose -f docker-compose.yml -f docker-compose.dev.yml config -q`
+Expected: aucune sortie dans les deux cas. Une erreur ici coûte deux secondes,
+la même erreur après le build en coûte vingt minutes.
+
+- [ ] **Step 7: Construire l'image**
 
 Run: `docker compose build`
 Expected: succès en 15-25 min. Surveiller la fin de l'installation pip : si
 `torchcodec` échoue, appliquer le repli documenté à la Task 16, étape 5.
 
-- [ ] **Step 6: Vérifier que le GPU est vu depuis le conteneur**
+- [ ] **Step 8: Vérifier que le GPU est vu depuis le conteneur**
 
 Run: `docker compose run --rm transcription python -c "import torch; print(torch.cuda.get_device_name(0))"`
 Expected: `NVIDIA GeForce RTX 3090`
 
-- [ ] **Step 7: Commit**
+- [ ] **Step 9: Commit**
 
 ```bash
-git add docker/ docker-compose.yml
+git add docker/ docker-compose.yml docker-compose.dev.yml
 git commit -m "feat: conteneurisation cuda avec compose"
 ```
 
@@ -3645,9 +3667,12 @@ Le README doit couvrir, dans cet ordre :
 5. Les endpoints, avec un exemple `curl` par format de réponse.
 6. Le tableau complet des variables de `.env.example`.
 7. Développement : `uv venv`, `uv pip install -e ".[dev]"`, `pytest` pour la
-   logique métier sans GPU ; `docker compose --profile dev up` pour le
-   rechargement à chaud ; `docker compose run --rm transcription pytest -m gpu`
-   pour les tests GPU.
+   logique métier sans GPU ;
+   `docker compose -f docker-compose.yml -f docker-compose.dev.yml up` pour le
+   rechargement à chaud, en avertissant que chaque sauvegarde recharge les
+   modèles sur le GPU (environ une minute) et qu'`ENABLE_DIARIZATION=false`
+   réduit cette attente ;
+   `docker compose run --rm transcription pytest -m gpu` pour les tests GPU.
 8. Dépannage : CUDA indisponible, 503 sur token invalide, 507 sur VRAM
    insuffisante avec le conseil de baisser `CHUNK_LENGTH_S`.
 
