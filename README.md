@@ -91,6 +91,7 @@ curl.exe -s -F "file=@reunion.mp3" -F "diarize=true" `
 | Endpoint | Rôle |
 |---|---|
 | `POST /transcribe` | Transcription native, avec diarization et formats étendus |
+| `POST /summarize` | **Compte-rendu** rédigé par un modèle de langue local |
 | `POST /v1/audio/transcriptions` | **Compatible OpenAI** — vos clients Whisper fonctionnent sans modification |
 | `GET /health` | État du service, périphérique, VRAM, modèles chargés |
 | `GET /v1/models` | Liste des modèles, au format OpenAI |
@@ -146,6 +147,43 @@ serveur a réellement fait de votre fichier.
 exposée : elle n'a pas d'équivalent OpenAI, et un champ supplémentaire romprait
 la compatibilité que cet endpoint existe pour offrir.
 
+## Compte-rendu
+
+`POST /summarize` rédige un compte-rendu, à partir d'un fichier audio ou d'une
+transcription déjà produite. La rédaction passe par **Ollama**, sur votre
+machine : rien ne sort, comme pour la transcription.
+
+```powershell
+# Depuis une transcription existante
+curl.exe -s -X POST http://127.0.0.1:8000/summarize `
+  -F "transcript=<reunion.txt" -F "format=structure" -F "response_format=text"
+
+# Directement depuis l'audio
+curl.exe -s -X POST http://127.0.0.1:8000/summarize `
+  -F "file=@reunion.wav" -F "channels=split" -F "format=narratif"
+```
+
+Deux gabarits : `structure` produit des sections fixes — objet, participants,
+sujets, **décisions**, **actions à mener**, points en suspens ; `narratif`
+produit quelques paragraphes de prose.
+
+**Fournissez soit `file`, soit `transcript`, jamais les deux.** L'endpoint est
+séparé de `/transcribe` précisément pour que rejouer un compte-rendu avec un
+autre gabarit ne coûte pas de retranscrire une réunion de deux heures.
+
+Le modèle doit exister dans votre installation Ollama (`ollama list`). Un
+modèle suffixé `:cloud` **ferait transiter la conversation par les serveurs
+d'Ollama** — à ne poser qu'en connaissance de cause.
+
+Mesuré avec `qwen3.8-27b` (Q4_K_M) : **1 min 53** pour une réunion de 51 min
+(12 600 tokens). Attention à la VRAM — le modèle occupe 18 Go, et avec les 3 Go
+du serveur de transcription on atteint 23,6 Go sur 24. Sur une carte plus
+petite, prenez un modèle plus léger ou posez `ENABLE_DIARIZATION=false` pendant
+la rédaction.
+
+Si Ollama est absent ou le modèle introuvable, `/summarize` répond **503** avec
+un message actionnable — et la transcription, elle, continue de fonctionner.
+
 ## Configuration
 
 | Variable | Défaut | Rôle |
@@ -161,6 +199,10 @@ la compatibilité que cet endpoint existe pour offrir.
 | `TURN_GAP_S` | `1.0` | Silence déclenchant un nouveau tour de parole |
 | `HOST` / `PORT` | `0.0.0.0` / `8000` | Écoute **dans** le conteneur |
 | `MAX_UPLOAD_MB` | `1024` | Taille maximale acceptée |
+| `SUMMARY_MODEL` | `qwen3.8-27b-64k:latest` | Modèle Ollama rédigeant le compte-rendu |
+| `OLLAMA_BASE_URL` | `http://host.docker.internal:11434` | Ollama vu depuis le conteneur |
+| `ENABLE_SUMMARY` | `true` | `false` désactive `/summarize` sans toucher au reste |
+| `SUMMARY_TIMEOUT_S` | `900` | Délai maximal de rédaction |
 
 `HOST=0.0.0.0` est l'adresse d'écoute interne au conteneur ; la publication
 reste restreinte à `127.0.0.1:8000` côté hôte.

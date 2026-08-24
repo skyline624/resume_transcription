@@ -91,6 +91,8 @@ async def health(state: Annotated[AppState, Depends(get_state)]) -> HealthOut:
         asr_model=state.asr.name,
         diarization_model=state.diarization.name,
         diarization_enabled=state.settings.enable_diarization,
+        summary_model=state.summary.name,
+        summary_enabled=state.settings.enable_summary,
         gpu=state.device_info or None,
     )
 

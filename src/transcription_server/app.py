@@ -5,7 +5,7 @@ import logging
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import JSONResponse
 
-from transcription_server.api import native_routes, openai_routes
+from transcription_server.api import native_routes, openai_routes, summary_routes
 from transcription_server.asr.engine import AsrEngine
 from transcription_server.config import Settings
 from transcription_server.diarization.engine import (
@@ -13,6 +13,10 @@ from transcription_server.diarization.engine import (
     NullDiarizationEngine,
 )
 from transcription_server.runtime import cuda_available, gpu_info, resolve_device
+from transcription_server.summary.engine import (
+    SummaryEngine,
+    UnavailableSummaryEngine,
+)
 from transcription_server.state import AppState
 
 logger = logging.getLogger(__name__)
@@ -32,6 +36,7 @@ def create_app(
     asr: AsrEngine,
     diarization: DiarizationEngine,
     device_info: dict | None = None,
+    summary: SummaryEngine | None = None,
 ) -> FastAPI:
     """Assemble l'application autour de moteurs deja construits.
 
@@ -45,6 +50,7 @@ def create_app(
         settings=settings,
         asr=asr,
         diarization=diarization,
+        summary=summary or UnavailableSummaryEngine(),
         device_info=device_info or {},
     )
 
@@ -87,6 +93,7 @@ def create_app(
 
     app.include_router(native_routes.router)
     app.include_router(openai_routes.router)
+    app.include_router(summary_routes.router)
     return app
 
 
@@ -152,12 +159,25 @@ def build_app(settings: Settings | None = None) -> FastAPI:
         )
         diarization = NullDiarizationEngine()
 
+    if settings.enable_summary:
+        from transcription_server.summary.ollama_engine import load_ollama_engine
+
+        summary = load_ollama_engine(
+            base_url=settings.ollama_base_url,
+            model=settings.summary_model,
+            timeout_s=settings.summary_timeout_s,
+        )
+    else:
+        logger.info("Rédaction de compte-rendu désactivée (ENABLE_SUMMARY=false).")
+        summary = UnavailableSummaryEngine()
+
     _warmup(asr, device)
 
     return create_app(
         settings=settings,
         asr=asr,
         diarization=diarization,
+        summary=summary,
         device_info=gpu_info(),
     )
 

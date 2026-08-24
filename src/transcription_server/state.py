@@ -8,6 +8,7 @@ from fastapi import Request
 from transcription_server.asr.engine import AsrEngine
 from transcription_server.config import Settings
 from transcription_server.diarization.engine import DiarizationEngine
+from transcription_server.summary.engine import SummaryEngine
 
 
 @dataclass
@@ -15,6 +16,7 @@ class AppState:
     settings: Settings
     asr: AsrEngine
     diarization: DiarizationEngine
+    summary: SummaryEngine
     device_info: dict = field(default_factory=dict)
 
     # Un seul travail sur le GPU a la fois : deux inferences concurrentes se

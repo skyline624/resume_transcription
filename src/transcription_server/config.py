@@ -33,6 +33,21 @@ class Settings(BaseSettings):
     chunk_overlap_s: float = Field(default=15.0, ge=0)
     turn_gap_s: float = Field(default=1.0, ge=0)
 
+    # --- Compte-rendu ---
+    #
+    # Le modele n'a pas de valeur imposee par le code : il depend de ce que
+    # l'installation d'Ollama contient. Un modele « :cloud » fait transiter la
+    # conversation par les serveurs d'Ollama — a ne poser qu'en connaissance
+    # de cause.
+    summary_model: str = "qwen3.8-27b-64k:latest"
+    # Depuis le conteneur, l'hote se joint par ce nom : ni 172.17.0.1 ni
+    # gateway.docker.internal ne repondent sous Docker Desktop.
+    ollama_base_url: str = "http://host.docker.internal:11434"
+    enable_summary: bool = True
+    # Un modele de 27B redigeant un compte-rendu de reunion de deux heures
+    # depasse largement les delais HTTP habituels.
+    summary_timeout_s: float = Field(default=900.0, gt=0)
+
     host: str = "0.0.0.0"
     port: int = Field(default=8000, gt=0, lt=65536)
     max_upload_mb: int = Field(default=1024, gt=0)
