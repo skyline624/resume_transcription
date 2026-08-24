@@ -1,5 +1,7 @@
 """Fabrique de l'application FastAPI."""
 
+import logging
+
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import JSONResponse
 
@@ -8,6 +10,8 @@ from transcription_server.asr.engine import AsrEngine
 from transcription_server.config import Settings
 from transcription_server.diarization.engine import DiarizationEngine
 from transcription_server.state import AppState
+
+logger = logging.getLogger(__name__)
 
 _ERROR_TYPES = {
     400: "invalid_request_error",
@@ -48,6 +52,28 @@ def create_app(
                 "error": {
                     "message": exc.detail,
                     "type": _ERROR_TYPES.get(exc.status_code, "server_error"),
+                }
+            },
+        )
+
+    @app.exception_handler(Exception)
+    async def unhandled_exception_handler(
+        request: Request, exc: Exception
+    ) -> JSONResponse:
+        """Meme enveloppe pour l'imprevu, sans rien divulguer de la trace.
+
+        Sans ce gestionnaire, une exception echappee d'un moteur sort en
+        `text/plain` sans enveloppe : une troisieme forme d'erreur, que la
+        moindre panne du GPU suffirait a exposer. Le detail part au journal --
+        Starlette releve ensuite l'exception, donc uvicorn la trace aussi.
+        """
+        logger.exception("Erreur non gérée sur %s", request.url.path)
+        return JSONResponse(
+            status_code=500,
+            content={
+                "error": {
+                    "message": "Erreur interne du serveur.",
+                    "type": "server_error",
                 }
             },
         )

@@ -7,26 +7,35 @@ route sur Windows, sans GPU ni telechargement de modele.
 import asyncio
 import inspect
 import io
+import logging
 import struct
 import tempfile
 import threading
-import time
 import wave
+from pathlib import Path
 
 import pytest
 from fastapi import HTTPException
 from fastapi.testclient import TestClient
 from httpx2 import ASGITransport, AsyncClient
 
-from transcription_server.api.native_routes import _save_upload
+from transcription_server.api.native_routes import _TAILLE_MORCEAU, _save_upload
+from transcription_server.api.schemas import result_to_out
 from transcription_server.app import create_app
 from transcription_server.asr.engine import StubAsrEngine
 from transcription_server.config import Settings
-from transcription_server.diarization.engine import StubDiarizationEngine
-from transcription_server.domain import SpeakerSegment, Word
+from transcription_server.diarization.engine import (
+    NullDiarizationEngine,
+    StubDiarizationEngine,
+)
+from transcription_server.domain import SpeakerSegment, Turn, Word
+from transcription_server.pipeline import TranscriptionResult
 
 S0 = "SPEAKER_00"
 S1 = "SPEAKER_01"
+
+# Journal ou part le detail retire des reponses 400.
+_JOURNAL_ROUTES = "transcription_server.api.native_routes"
 
 
 def _wav_bytes(seconds: float = 2.0, rate: int = 16000) -> bytes:
@@ -278,6 +287,28 @@ def test_transcribe_rend_la_duree_et_le_chronometrage(client):
     assert set(corps["timing"]) == {"decode", "asr", "diarization"}
 
 
+def test_result_to_out_arrondit_a_la_frontiere():
+    # `pipeline` arrondit deja son chronometrage, donc aucune requete HTTP ne
+    # peut distinguer un `result_to_out` qui arrondit d'un qui se contente de
+    # recopier. L'unite du corps JSON -- tous les flottants au millieme -- est
+    # pourtant un contrat de l'API, pas une propriete empruntee au fournisseur :
+    # on l'exerce donc directement, avec des valeurs brutes.
+    resultat = TranscriptionResult(
+        text="bonjour",
+        language=None,
+        duration=2.0000625,
+        speakers=[],
+        turns=[Turn(None, 0.0001234, 0.5006789, "bonjour", ())],
+        timing={"decode": 0.014739990234375, "asr": 1.0 / 3},
+    )
+
+    sortie = result_to_out(resultat)
+
+    assert sortie.duration == 2.0
+    assert sortie.timing == {"decode": 0.015, "asr": 0.333}
+    assert (sortie.turns[0].start, sortie.turns[0].end) == (0.0, 0.501)
+
+
 def test_la_duree_est_arrondie_au_millieme(client):
     # 32 001 echantillons a 16 kHz font 2,0000625 s : sans arrondi, la reponse
     # porterait les chiffres parasites du calcul en virgule flottante.
@@ -352,6 +383,45 @@ def test_num_speakers_seul_est_accepte(client):
     assert reponse.status_code == 200
 
 
+def test_diarize_explicite_sur_moteur_nul_donne_400():
+    # Sous Task 14, ENABLE_DIARIZATION=false injecte NullDiarizationEngine.
+    # Rendre 200 avec `speakers: []` ferait croire a un audio mono-locuteur
+    # alors que la fonction est simplement eteinte : echouer bruyamment.
+    client = TestClient(_creer_app(diarization=NullDiarizationEngine()))
+    reponse = client.post("/transcribe", files=_fichier(), data={"diarize": "true"})
+
+    assert reponse.status_code == 400
+    erreur = reponse.json()["error"]
+    assert erreur["type"] == "invalid_request_error"
+    assert "ENABLE_DIARIZATION" in erreur["message"]
+
+
+def test_diarize_absent_sur_moteur_nul_reste_accepte():
+    # Le cas non demande continue de suivre la configuration, sans erreur.
+    client = TestClient(_creer_app(diarization=NullDiarizationEngine()))
+    reponse = client.post("/transcribe", files=_fichier())
+
+    assert reponse.status_code == 200
+    assert reponse.json()["speakers"] == []
+
+
+def test_diarize_false_sur_moteur_nul_reste_accepte():
+    client = TestClient(_creer_app(diarization=NullDiarizationEngine()))
+    reponse = client.post("/transcribe", files=_fichier(), data={"diarize": "false"})
+
+    assert reponse.status_code == 200
+    assert reponse.json()["speakers"] == []
+
+
+def test_diarize_explicite_sur_moteur_reel_reste_accepte(client):
+    # Le controle porte sur le moteur, pas sur ENABLE_DIARIZATION : ce serveur
+    # a `enable_diarization=False` mais un vrai moteur, la demande est donc
+    # legitime. C'est deja ce que fige `test_transcribe_json`.
+    reponse = client.post("/transcribe", files=_fichier(), data={"diarize": "true"})
+    assert reponse.status_code == 200
+    assert reponse.json()["speakers"] == [S0, S1]
+
+
 def test_num_speakers_avec_max_speakers_donne_400(client):
     reponse = client.post(
         "/transcribe",
@@ -390,6 +460,96 @@ def test_message_413_ne_divulgue_pas_de_chemin(tmp_path, monkeypatch):
     assert reponse.status_code == 413
     assert reponse.json()["error"]["type"] == "invalid_request_error"
     assert str(tmp_path) not in reponse.text
+
+
+def test_le_400_journalise_le_detail_retire_de_la_reponse(client, caplog):
+    # `native_routes` est desormais le seul endroit ou le diagnostic survit :
+    # sans cette assertion, le correctif degenererait en perte d'information.
+    with caplog.at_level(logging.WARNING, logger=_JOURNAL_ROUTES):
+        reponse = client.post("/transcribe", files=_fichier("junk.wav", b"pas un son"))
+
+    assert reponse.status_code == 400
+    avertissements = [
+        enr
+        for enr in caplog.records
+        if enr.name == _JOURNAL_ROUTES and enr.levelno == logging.WARNING
+    ]
+    assert len(avertissements) == 1
+
+    message = avertissements[0].getMessage()
+    assert message.startswith("Échec de décodage :")
+    assert "ffmpeg" in message.lower()
+
+
+class AsrQuiExplose:
+    """Moteur qui echoue comme le ferait un GPU tombant en panne."""
+
+    @property
+    def name(self) -> str:
+        return "asr-qui-explose"
+
+    def transcribe(self, audio, language):
+        raise RuntimeError("le modèle a rendu l'âme sur /dev/nvidia0")
+
+
+def test_erreur_non_geree_rend_lenveloppe_openai(tmp_path, monkeypatch):
+    monkeypatch.setattr(tempfile, "tempdir", str(tmp_path))
+    client = TestClient(_creer_app(asr=AsrQuiExplose()), raise_server_exceptions=False)
+
+    reponse = client.post("/transcribe", files=_fichier(), data={"diarize": "false"})
+
+    assert reponse.status_code == 500
+    assert reponse.headers["content-type"].startswith("application/json")
+    assert reponse.json() == {
+        "error": {"message": "Erreur interne du serveur.", "type": "server_error"}
+    }
+    # Ni la trace ni le message d'origine ne doivent transparaitre.
+    assert "nvidia" not in reponse.text
+    assert "RuntimeError" not in reponse.text
+    # Et le temporaire disparait malgre l'exception : seul chemin d'erreur des
+    # moteurs, jusqu'ici non figé.
+    assert list(tmp_path.iterdir()) == []
+
+
+def test_openapi_documente_la_reponse_de_transcribe(client):
+    # La route rend soit un PlainTextResponse soit un TranscriptionOut, donc
+    # pas de `response_model` ; `responses` documente le cas JSON sans
+    # contraindre le retour reel.
+    schema = client.get("/openapi.json").json()
+
+    assert "TranscriptionOut" in schema["components"]["schemas"]
+    contenu = schema["paths"]["/transcribe"]["post"]["responses"]["200"]["content"]
+    assert contenu["application/json"]["schema"]["$ref"].endswith("/TranscriptionOut")
+
+
+def test_les_trois_formes_derreur_de_lapi(client):
+    """Fige chaque forme d'erreur exposee aujourd'hui.
+
+    L'API n'en rend pas une seule : Task 10 tranchera leur unification. D'ici
+    la, tout glissement de forme casse ce test au lieu de passer inapercu.
+    """
+    # 1. HTTPException levee par une route, et desormais toute exception non
+    #    geree : enveloppe OpenAI.
+    conflit = client.post(
+        "/transcribe",
+        files=_fichier(),
+        data={"num_speakers": "2", "min_speakers": "1"},
+    )
+    assert conflit.status_code == 400
+    assert set(conflit.json()) == {"error"}
+    assert set(conflit.json()["error"]) == {"message", "type"}
+
+    # 2. 404 de routage et 405 : forme FastAPI par defaut, hors du MRO de
+    #    fastapi.HTTPException, donc non uniformisee.
+    assert client.get("/inconnu").json() == {"detail": "Not Found"}
+    assert client.get("/transcribe").json() == {"detail": "Method Not Allowed"}
+
+    # 3. 422 de validation : liste de details FastAPI.
+    invalide = client.post(
+        "/transcribe", files=_fichier(), data={"response_format": "yaml"}
+    )
+    assert invalide.status_code == 422
+    assert isinstance(invalide.json()["detail"], list)
 
 
 def test_enveloppe_derreur_couvre_503_et_code_inconnu():
@@ -529,6 +689,40 @@ class UploadSimple:
         return morceau
 
 
+async def test_save_upload_ecrit_tous_les_morceaux(tmp_path, monkeypatch):
+    # `_save_upload` lit par blocs de 1 Mio. Tant qu'aucun test ne depasse un
+    # bloc, la boucle ne tourne jamais deux fois : un `break` apres le premier
+    # morceau, ou un `write` sorti de la boucle, passerait inapercu et
+    # tronquerait silencieusement tout upload reel. 2,5 Mio, donc trois
+    # iterations, avec un motif qui differe a chaque bloc pour attraper aussi
+    # une ecriture desordonnee ou repetee.
+    monkeypatch.setattr(tempfile, "tempdir", str(tmp_path))
+    contenu = bytes(range(256)) * 10240
+    assert len(contenu) == 2_621_440
+
+    chemin = await _save_upload(UploadSimple(contenu), 10 * 1024 * 1024)
+
+    try:
+        assert chemin.stat().st_size == len(contenu)
+        assert chemin.read_bytes() == contenu
+    finally:
+        chemin.unlink(missing_ok=True)
+
+
+def test_transcribe_ne_tronque_pas_un_upload_multi_morceaux(client):
+    # Pendant complet du test ci-dessus : de bout en bout, sur la vraie route.
+    # 40 s a 16 kHz mono 16 bits font 1 280 044 octets, soit plus d'un bloc de
+    # lecture. La duree l'atteste -- et referme du meme coup le fait que la
+    # duree n'etait jamais assertee qu'autour de 2,0 s.
+    audio = _wav_de_frames(40 * 16000)
+    assert len(audio) > _TAILLE_MORCEAU
+
+    reponse = client.post("/transcribe", files=_fichier("longue.wav", audio))
+
+    assert reponse.status_code == 200
+    assert reponse.json()["duration"] == pytest.approx(40.0, abs=0.01)
+
+
 class FermetureCassee:
     """Emule un disque plein : le vidage du tampon echoue a la fermeture.
 
@@ -568,9 +762,19 @@ async def test_save_upload_ne_laisse_rien_si_la_fermeture_echoue(tmp_path, monke
 
 def test_save_upload_garde_son_nom_et_sa_signature():
     # Task 10 importe `_save_upload` depuis ce module : le nom et la signature
-    # font partie du contrat.
+    # font partie du contrat. Le nom et le module sont deja epingles par
+    # l'import en tete de fichier, qui casse a la collecte.
     signature = inspect.signature(_save_upload)
-    assert list(signature.parameters) == ["upload", "max_bytes"]
+    parametres = list(signature.parameters.values())
+
+    assert [p.name for p in parametres] == ["upload", "max_bytes"]
+    # Le kind compte autant que le nom : passer a `(upload, *, max_bytes)`
+    # casserait un appel positionnel en Task 10 sans rien changer aux noms.
+    assert all(
+        p.kind is inspect.Parameter.POSITIONAL_OR_KEYWORD for p in parametres
+    )
+    # Et l'appelant construit un chemin, pas une chaine.
+    assert signature.return_annotation is Path
     assert inspect.iscoroutinefunction(_save_upload)
 
 
@@ -620,45 +824,95 @@ async def test_health_reste_disponible_pendant_une_transcription():
         assert (await tache).status_code == 200
 
 
-class AsrCompteur:
-    """Mesure le nombre maximal d'appels simultanes a l'ASR."""
+class VerrouObserve(asyncio.Lock):
+    """Verrou identique, qui compte les acquisitions ayant du attendre."""
 
     def __init__(self) -> None:
+        super().__init__()
+        self.attentes = 0
+
+    async def acquire(self) -> bool:
+        if self.locked():
+            self.attentes += 1
+        return await super().acquire()
+
+
+class AsrRendezVous:
+    """Le premier appel retient le verrou jusqu'a liberation, pas les suivants."""
+
+    def __init__(self, entre: threading.Event, liberer: threading.Event) -> None:
+        self._entre = entre
+        self._liberer = liberer
         self._verrou = threading.Lock()
-        self.en_cours = 0
+        self.appels = 0
+        self.simultanes = 0
         self.maximum = 0
 
     @property
     def name(self) -> str:
-        return "asr-compteur"
+        return "asr-rendez-vous"
 
     def transcribe(self, audio, language):
         with self._verrou:
-            self.en_cours += 1
-            self.maximum = max(self.maximum, self.en_cours)
-        time.sleep(0.15)
+            self.appels += 1
+            premier = self.appels == 1
+            self.simultanes += 1
+            self.maximum = max(self.maximum, self.simultanes)
+        if premier:
+            self._entre.set()
+            self._liberer.wait(10.0)
         with self._verrou:
-            self.en_cours -= 1
+            self.simultanes -= 1
         return [Word("bonjour", 0.0, 0.5)]
 
 
+async def _attendre_contention(verrou: VerrouObserve) -> None:
+    while verrou.attentes == 0:
+        await asyncio.sleep(0.005)
+
+
 async def test_le_verrou_gpu_serialise_les_transcriptions():
-    moteur = AsrCompteur()
+    entre = threading.Event()
+    liberer = threading.Event()
+    moteur = AsrRendezVous(entre, liberer)
     app = _creer_app(asr=moteur)
+    verrou = VerrouObserve()
+    app.state.app_state.gpu_lock = verrou
 
     transport = ASGITransport(app=app)
     async with AsyncClient(transport=transport, base_url="http://serveur") as client:
-        reponses = await asyncio.gather(
-            *(
+
+        def poster():
+            return asyncio.create_task(
                 client.post(
                     "/transcribe",
                     files=_fichier(),
                     data={"diarize": "false"},
                     timeout=30.0,
                 )
-                for _ in range(2)
             )
+
+        premiere = poster()
+        assert await asyncio.to_thread(entre.wait, 10.0), (
+            "la premiere transcription n'a jamais atteint l'ASR"
         )
 
+        seconde = poster()
+        try:
+            # Le point cle : on attend que la seconde requete se heurte
+            # *reellement* au verrou. Sans verrou elle passerait sans jamais
+            # attendre, cette attente expirerait, et le test echouerait -- au
+            # lieu de reussir a vide faute de recouvrement, comme le ferait une
+            # mesure fondee sur un `sleep`.
+            await asyncio.wait_for(_attendre_contention(verrou), timeout=5.0)
+            assert moteur.appels == 1, (
+                "la seconde requete a atteint l'ASR malgre le verrou"
+            )
+        finally:
+            liberer.set()
+
+        reponses = await asyncio.gather(premiere, seconde)
+
     assert [r.status_code for r in reponses] == [200, 200]
+    assert verrou.attentes == 1
     assert moteur.maximum == 1

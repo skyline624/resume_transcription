@@ -1,5 +1,7 @@
 """Modeles de reponse de l'API."""
 
+from typing import Any
+
 from pydantic import BaseModel, Field
 
 from transcription_server.domain import Turn
@@ -35,7 +37,9 @@ class HealthOut(BaseModel):
     asr_model: str
     diarization_model: str
     diarization_enabled: bool
-    gpu: dict | None = None
+    # dict nu vaudrait dict[Any, Any] : une cle non serialisable y passerait la
+    # validation pour ne se manifester qu'a la serialisation, en avertissement.
+    gpu: dict[str, Any] | None = None
 
 
 def turn_to_out(turn: Turn, include_words: bool) -> TurnOut:
@@ -62,5 +66,8 @@ def result_to_out(
         duration=round(result.duration, 3),
         speakers=result.speakers,
         turns=[turn_to_out(t, include_words) for t in result.turns],
-        timing=result.timing,
+        # `pipeline` arrondit deja, mais l'unite du corps JSON -- tous les
+        # flottants au millieme -- est un contrat de l'API, pas une propriete
+        # empruntee a son fournisseur. On le tient ici, a la frontiere.
+        timing={nom: round(valeur, 3) for nom, valeur in result.timing.items()},
     )

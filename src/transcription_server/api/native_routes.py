@@ -9,8 +9,13 @@ from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
 from fastapi.responses import PlainTextResponse
 from starlette.concurrency import run_in_threadpool
 
-from transcription_server.api.schemas import HealthOut, result_to_out
+from transcription_server.api.schemas import (
+    HealthOut,
+    TranscriptionOut,
+    result_to_out,
+)
 from transcription_server.audio import AudioDecodeError
+from transcription_server.diarization.engine import NullDiarizationEngine
 from transcription_server.formatting import to_dialogue, to_plain_text, to_srt, to_vtt
 from transcription_server.pipeline import TranscriptionRequest, run_pipeline
 from transcription_server.state import AppState, get_state
@@ -86,7 +91,7 @@ async def health(state: Annotated[AppState, Depends(get_state)]) -> HealthOut:
     )
 
 
-@router.post("/transcribe")
+@router.post("/transcribe", responses={200: {"model": TranscriptionOut}})
 async def transcribe(
     state: Annotated[AppState, Depends(get_state)],
     file: Annotated[UploadFile, File()],
@@ -104,6 +109,23 @@ async def transcribe(
         raise HTTPException(
             status_code=400,
             detail="num_speakers et min_speakers/max_speakers s'excluent.",
+        )
+
+    # Demander explicitement la diarization a un serveur qui n'en a pas doit
+    # echouer bruyamment. Le moteur nul rendrait une liste de locuteurs vide
+    # avec un 200, indistinguable d'un enregistrement a un seul locuteur :
+    # l'appelant conclurait a un audio mono-locuteur au lieu d'apprendre que la
+    # fonction est eteinte. Le test porte sur le moteur et non sur
+    # ENABLE_DIARIZATION, car un appelant peut legitimement demander la
+    # diarization a un serveur dont le defaut est de ne pas la faire.
+    if diarize and isinstance(state.diarization, NullDiarizationEngine):
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                "La diarization est désactivée sur ce serveur. Redémarrez-le "
+                "avec ENABLE_DIARIZATION=true et un HF_TOKEN valide, ou "
+                "omettez le paramètre diarize."
+            ),
         )
 
     settings = state.settings
