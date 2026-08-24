@@ -1,3 +1,5 @@
+import itertools
+
 import pytest
 
 from transcription_server.alignment import assign_speaker, group_into_turns, overlap
@@ -5,6 +7,7 @@ from transcription_server.domain import SpeakerSegment, Word
 
 S0 = "SPEAKER_00"
 S1 = "SPEAKER_01"
+S2 = "SPEAKER_02"
 
 
 def test_overlap_partiel():
@@ -17,6 +20,10 @@ def test_overlap_nul_si_disjoint():
 
 def test_overlap_nul_si_contigu():
     assert overlap(1.0, 2.0, 2.0, 3.0) == 0.0
+
+
+def test_overlap_inclusion_totale_rend_la_duree_du_plus_petit():
+    assert overlap(1.0, 5.0, 2.0, 3.0) == pytest.approx(1.0)
 
 
 def test_mot_entierement_dans_un_segment():
@@ -39,6 +46,21 @@ def test_egalite_stricte_le_segment_le_plus_precoce_gagne():
     assert assign_speaker(w, segs, None) == S0
 
 
+# Trois segments a 0.5 s de recouvrement chacun avec le mot teste, dont deux de
+# bornes strictement identiques : seule une cle de tri totale les departage.
+_SEGMENTS_A_EGALITE = (
+    SpeakerSegment(S1, 1.0, 1.5),
+    SpeakerSegment(S0, 1.0, 1.5),
+    SpeakerSegment(S2, 2.0, 2.5),
+)
+
+
+@pytest.mark.parametrize("ordre", list(itertools.permutations(_SEGMENTS_A_EGALITE)))
+def test_egalite_stricte_le_resultat_ne_depend_pas_de_l_ordre(ordre):
+    w = Word("pile", 0.0, 3.0)
+    assert assign_speaker(w, list(ordre), None) == S0
+
+
 def test_mot_dans_un_silence_herite_du_precedent():
     segs = [SpeakerSegment(S0, 0.0, 1.0)]
     w = Word("apres", 5.0, 5.5)
@@ -57,8 +79,20 @@ def test_mot_de_duree_nulle_teste_l_appartenance_du_point():
     assert assign_speaker(w, segs, None) == S0
 
 
+def test_appartenance_du_point_prime_sur_le_precedent():
+    segs = [SpeakerSegment(S0, 0.0, 5.0)]
+    w = Word("point", 2.0, 2.0)
+    assert assign_speaker(w, segs, previous=S1) == S0
+
+
 def test_aucun_segment_donne_none():
     assert assign_speaker(Word("seul", 0.0, 1.0), [], None) is None
+
+
+def test_aucun_segment_herite_du_precedent():
+    # Une liste vide est le cas extreme de "ne recouvre rien" : la regle
+    # d'heritage s'applique comme pour un mot tombe dans un blanc.
+    assert assign_speaker(Word("seul", 0.0, 1.0), [], previous=S0) == S0
 
 
 def test_group_into_turns_change_de_tour_au_changement_de_locuteur():
@@ -89,6 +123,24 @@ def test_group_into_turns_coupe_sur_un_silence_long():
     assert turns[1].text == "trois"
     assert turns[0].speaker == S0
     assert turns[1].speaker == S0
+
+
+def test_group_into_turns_ne_coupe_pas_sur_un_silence_egal_au_seuil():
+    # Le seuil doit etre depasse strictement : 1.0 s de silence pour
+    # turn_gap_s=1.0 laisse les deux mots dans le meme tour.
+    segs = [SpeakerSegment(S0, 0.0, 20.0)]
+    words = [Word("un", 0.0, 1.0), Word("deux", 2.0, 3.0)]
+    turns = group_into_turns(words, segs, turn_gap_s=1.0)
+    assert len(turns) == 1
+    assert turns[0].text == "un deux"
+
+
+def test_group_into_turns_isole_un_mot_anterieur_a_toute_diarization():
+    # Le silence est court : c'est le passage de None a S0 qui coupe le tour.
+    segs = [SpeakerSegment(S0, 5.0, 9.0)]
+    words = [Word("avant", 4.5, 4.9), Word("dedans", 5.1, 5.5)]
+    turns = group_into_turns(words, segs, turn_gap_s=1.0)
+    assert [(t.speaker, t.text) for t in turns] == [(None, "avant"), (S0, "dedans")]
 
 
 def test_group_into_turns_sans_segments_produit_un_tour_sans_locuteur():

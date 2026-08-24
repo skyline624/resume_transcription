@@ -19,26 +19,27 @@ def assign_speaker(
     """Rend le locuteur d'un mot.
 
     Regle : recouvrement temporel maximal. A egalite stricte, le segment qui
-    commence le plus tot l'emporte, afin que le resultat soit deterministe
-    quel que soit l'ordre de la liste recue.
+    commence le plus tot l'emporte -- puis, a bornes identiques, celui dont le
+    libelle de locuteur vient en premier --, afin que le resultat soit
+    deterministe quel que soit l'ordre de la liste recue.
 
-    Si aucun segment ne recouvre le mot, celui-ci herite du locuteur precedent
-    (continuite d'un tour de parole a travers un blanc de diarization), et vaut
-    None s'il n'y a pas de precedent.
+    Si aucun segment ne recouvre le mot -- liste vide comprise, qui en est le
+    cas extreme --, celui-ci herite du locuteur precedent (continuite d'un tour
+    de parole a travers un blanc de diarization), et vaut None s'il n'y a pas
+    de precedent.
     """
-    if not segments:
-        return None
-
-    # Trier par debut rend la regle de depart d'egalite independante de l'ordre
-    # d'arrivee des segments.
-    ordered = sorted(segments, key=lambda s: (s.start, s.end))
+    # Trier rend la regle de depart d'egalite independante de l'ordre d'arrivee
+    # des segments. La cle inclut le locuteur pour rester totale : deux segments
+    # de bornes identiques doivent eux aussi etre departages, sans quoi la
+    # stabilite de sorted laisserait l'ordre d'arrivee decider.
+    ordered = sorted(segments, key=lambda s: (s.start, s.end, s.speaker))
 
     best_speaker: str | None = None
     best_overlap = 0.0
     for seg in ordered:
-        current = overlap(word.start, word.end, seg.start, seg.end)
-        if current > best_overlap:
-            best_overlap = current
+        current_overlap = overlap(word.start, word.end, seg.start, seg.end)
+        if current_overlap > best_overlap:
+            best_overlap = current_overlap
             best_speaker = seg.speaker
 
     if best_speaker is not None:
@@ -63,6 +64,12 @@ def group_into_turns(
 
     Un nouveau tour demarre quand le locuteur change, ou quand le silence
     entre deux mots consecutifs depasse turn_gap_s.
+
+    Precondition : words est trie par ordre chronologique croissant, ce que
+    produit l'ASR. L'appelant doit garantir cet ordre. Sur une entree
+    desordonnee les bornes d'un tour viennent quand meme de son premier et de
+    son dernier mot, et les silences calcules deviennent negatifs donc ne
+    coupent jamais : le resultat serait silencieusement faux.
     """
     if not words:
         return []
