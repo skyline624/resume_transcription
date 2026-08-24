@@ -2957,6 +2957,12 @@ def _extract_words(hypothesis) -> list[Word]:
                 end=float(entry["end"]),
             )
         )
+    # Le contrat de AsrEngine.transcribe exige des mots chronologiques : ni
+    # merge_windows ni group_into_turns ne trient, et une entree desordonnee
+    # produit silencieusement des tours dont end < start. NeMo les rend
+    # normalement dans l'ordre, mais rien ne le garantit — le tri est bon marche
+    # et supprime la dependance a cette hypothese.
+    words.sort(key=lambda w: (w.start, w.end))
     return words
 
 
@@ -2979,15 +2985,28 @@ def load_nemo_engine(
     return NemoParakeetEngine(model=model, model_name=model_name, device=device)
 ```
 
-- [ ] **Step 3: Vérifier que le paquet s'importe toujours sans l'extra gpu**
+- [ ] **Step 3: Inscrire `NemoParakeetEngine` dans les tests de conformité de signature**
 
-Run: `.venv\Scripts\pytest -v`
-Expected: PASS — 88 tests, les tests `gpu` désélectionnés
+La Task 7 a paramétré `tests/unit/test_engines.py` pour que chaque nouveau
+moteur soit vérifié en une ligne. Ces tests attrapent ce qu'`isinstance` ne voit
+pas : un renommage de paramètre, un réordonnancement, un `*args`, un
+keyword-only. Sans eux, un moteur de signature incorrecte passerait toute la
+suite et ne casserait qu'à la première requête HTTP dans le conteneur.
 
-- [ ] **Step 4: Commit**
+Ajouter `NemoParakeetEngine` à la liste paramétrée des moteurs ASR (autour de
+`tests/unit/test_engines.py:80`). L'import de NeMo étant paresseux — il vit dans
+`load_nemo_engine`, pas au niveau du module — la classe s'importe sans l'extra
+`gpu` et ce test tourne **sur Windows, sans GPU**.
+
+- [ ] **Step 4: Vérifier que le paquet s'importe toujours sans l'extra gpu**
+
+Run: `.venv\Scripts\python.exe -m pytest -v`
+Expected: PASS, les tests `gpu` désélectionnés
+
+- [ ] **Step 5: Commit**
 
 ```bash
-git add src/transcription_server/asr/nemo_parakeet.py tests/gpu/
+git add src/transcription_server/asr/nemo_parakeet.py tests/gpu/ tests/unit/test_engines.py
 git commit -m "feat: adaptateur nemo parakeet"
 ```
 
@@ -3163,15 +3182,25 @@ def load_pyannote_engine(
     return PyannoteEngine(pipeline=pipeline, model_name=model_name)
 ```
 
-- [ ] **Step 3: Vérifier que la suite Windows passe toujours**
+- [ ] **Step 3: Inscrire `PyannoteEngine` dans les tests de conformité de signature**
 
-Run: `.venv\Scripts\pytest -v`
-Expected: PASS — 88 tests, tests `gpu` désélectionnés
+Même geste qu'en Task 12, côté diarization : ajouter `PyannoteEngine` à la liste
+paramétrée des moteurs (autour de `tests/unit/test_engines.py:86`). L'import de
+pyannote étant paresseux — il vit dans `load_pyannote_engine` — la classe
+s'importe sans l'extra `gpu` et le test tourne **sur Windows, sans GPU ni token**.
 
-- [ ] **Step 4: Commit**
+Ces tests vérifient les signatures, ce qu'`isinstance` contre un `Protocol` ne
+fait pas : il ne contrôle que l'existence des noms d'attributs.
+
+- [ ] **Step 4: Vérifier que la suite Windows passe toujours**
+
+Run: `.venv\Scripts\python.exe -m pytest -v`
+Expected: PASS, tests `gpu` désélectionnés
+
+- [ ] **Step 5: Commit**
 
 ```bash
-git add src/transcription_server/diarization/pyannote_engine.py tests/gpu/test_pyannote_engine.py
+git add src/transcription_server/diarization/pyannote_engine.py tests/gpu/test_pyannote_engine.py tests/unit/test_engines.py
 git commit -m "feat: adaptateur pyannote pour la diarization"
 ```
 
