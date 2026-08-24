@@ -7,6 +7,7 @@ route sur Windows, sans GPU ni telechargement de modele.
 import asyncio
 import inspect
 import io
+import shutil
 import logging
 import struct
 import tempfile
@@ -965,8 +966,51 @@ def test_channels_inconnu_est_rejete(client):
     assert response.status_code == 422
 
 
+def _wav_stereo_bytes(seconds: float = 1.0, rate: int = 16000) -> bytes:
+    """Wav stereo dont les deux canaux portent des signaux distincts."""
+    import numpy as np
+
+    n = int(seconds * rate)
+    t = np.arange(n) / rate
+    gauche = (0.9 * np.sin(2 * np.pi * 440 * t) * 32767).astype(np.int16)
+    droit = (0.4 * np.sin(2 * np.pi * 880 * t) * 32767).astype(np.int16)
+    entrelace = np.empty(n * 2, dtype=np.int16)
+    entrelace[0::2], entrelace[1::2] = gauche, droit
+    buffer = io.BytesIO()
+    with wave.open(buffer, "wb") as handle:
+        handle.setnchannels(2)
+        handle.setsampwidth(2)
+        handle.setframerate(rate)
+        handle.writeframes(entrelace.tobytes())
+    return buffer.getvalue()
+
+
 def test_la_reponse_dit_combien_de_canaux_ont_ete_transcrits(client):
     corps = client.post(
         "/transcribe", files={"file": ("test.wav", _wav_bytes(), "audio/wav")}
+    ).json()
+    assert corps["channels_used"] == 1
+
+
+@pytest.mark.skipif(shutil.which("ffmpeg") is None, reason="ffmpeg absent du PATH")
+def test_channels_used_vaut_2_sur_un_stereo_en_split(client):
+    """Le test sur un mono ne discrimine rien : `channels_used` code en dur a 1
+    le passerait. Seul un fichier a deux canaux prouve que la valeur remonte
+    reellement du pipeline — sans quoi la reponse mentirait a l'appelant sur ce
+    que le serveur a fait de son fichier."""
+    corps = client.post(
+        "/transcribe",
+        files={"file": ("stereo.wav", _wav_stereo_bytes(), "audio/wav")},
+        data={"channels": "split"},
+    ).json()
+    assert corps["channels_used"] == 2
+
+
+@pytest.mark.skipif(shutil.which("ffmpeg") is None, reason="ffmpeg absent du PATH")
+def test_channels_used_vaut_1_sur_un_stereo_en_mix(client):
+    corps = client.post(
+        "/transcribe",
+        files={"file": ("stereo.wav", _wav_stereo_bytes(), "audio/wav")},
+        data={"channels": "mix"},
     ).json()
     assert corps["channels_used"] == 1

@@ -861,3 +861,46 @@ def test_split_sur_un_fichier_mono_se_comporte_comme_mix(short_wav):
     )
     assert resultat.channels_used == 1
     assert len(asr.appels) == 1
+
+
+@pytest.mark.skipif(shutil.which("ffmpeg") is None, reason="ffmpeg absent du PATH")
+def test_split_rend_les_tours_dans_l_ordre_chronologique(tmp_path):
+    """Sans tri, tous les tours du canal 1 suivraient ceux du canal 0 et la
+    lecture ne suivrait plus la conversation : on lirait une personne en
+    entier, puis l'autre en entier."""
+    import numpy as np
+
+    n = 16000 * 4
+    t = np.arange(n) / 16000
+    gauche = (0.9 * np.sin(2 * np.pi * 440 * t)).astype(np.float32)
+    droit = (0.4 * np.sin(2 * np.pi * 880 * t)).astype(np.float32)
+    chemin = tmp_path / "alterne.wav"
+    _ecrire_wav_stereo(chemin, gauche, droit)
+
+    class AsrAlternant:
+        """Le canal fort parle tot et tard, le canal faible au milieu."""
+
+        name = "alternant"
+
+        def transcribe(self, audio, language):
+            import numpy as np
+
+            crete = float(np.abs(audio).max()) if audio.size else 0.0
+            if crete > 0.7:
+                return [Word("debut", 0.0, 0.5), Word("fin", 3.0, 3.5)]
+            return [Word("milieu", 1.5, 2.0)]
+
+    resultat = run_pipeline(
+        path=chemin,
+        asr=AsrAlternant(),
+        diarization=NullDiarizationEngine(),
+        request=TranscriptionRequest(diarize=False, channel_mode="split"),
+        chunk_length_s=480.0,
+        chunk_overlap_s=15.0,
+        turn_gap_s=0.5,
+    )
+    debuts = [tour.start for tour in resultat.turns]
+    assert debuts == sorted(debuts), f"tours non chronologiques : {debuts}"
+    assert resultat.text == "debut milieu fin", (
+        f"ordre de lecture incorrect : {resultat.text!r}"
+    )

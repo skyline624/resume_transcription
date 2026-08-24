@@ -96,10 +96,50 @@ curl.exe -s -F "file=@reunion.mp3" -F "diarize=true" `
 | `GET /v1/models` | Liste des modèles, au format OpenAI |
 
 **Paramètres de `/transcribe`** : `file` (requis), `language`, `diarize`,
-`num_speakers`, `min_speakers`, `max_speakers`, `word_timestamps`,
+`num_speakers`, `min_speakers`, `max_speakers`, `word_timestamps`, `channels`,
 `response_format` parmi `json`, `text`, `srt`, `vtt`, `dialogue`.
 
 `num_speakers` fixe un nombre exact et s'exclut de `min_speakers`/`max_speakers`.
+
+> **`language` est accepté mais sans effet.** Parakeet v3 détecte la langue
+> lui-même et n'expose aucun moyen de la forcer — mesuré : la transcription est
+> identique avec et sans. Le champ existe pour la compatibilité OpenAI, et il
+> est simplement renvoyé tel quel dans la réponse.
+
+### Enregistrements multi-pistes : `channels=split`
+
+Certains outils enregistrent **une source par canal** — votre micro à gauche,
+les participants distants à droite. Replié en mono, deux paroles simultanées se
+superposent et **les deux deviennent inintelligibles**.
+
+`channels=split` transcrit chaque canal séparément, diarise chacun de son côté,
+puis refusionne par horodatage. Mesuré sur un enregistrement réel de ce type :
+
+| | `mix` (défaut) | `split` |
+|---|---|---|
+| Mots récupérés | 54 | **207** |
+| Locuteurs | 2 | **4** |
+| Bascules parasites vers l'anglais | 14 | **0** |
+
+```powershell
+curl.exe -s -F "file=@appel.wav" -F "channels=split" -F "diarize=true" `
+  -F "response_format=dialogue" http://127.0.0.1:8000/transcribe
+```
+
+**Aucune détection automatique** : le mode est explicite et vaut `mix` par
+défaut. Une bascule automatique par corrélation des canaux a été essayée puis
+abandonnée — elle confond « un canal est vide » et « les canaux portent des
+contenus différents », les deux donnant une corrélation nulle.
+
+Pour savoir si un fichier s'y prête, comparez les deux modes sur un extrait, ou
+inspectez les canaux :
+
+```powershell
+ffmpeg -i enregistrement.wav -filter_complex "[0:a]channelsplit=channel_layout=stereo[g][d]" -map "[g]" g.wav -map "[d]" d.wav
+```
+
+La réponse indique toujours `channels_used`, pour que vous sachiez ce que le
+serveur a réellement fait de votre fichier.
 
 **`POST /v1/audio/transcriptions`** accepte les champs OpenAI habituels et rend
 `json`, `text`, `srt`, `vtt` ou `verbose_json`. La diarization n'y est pas

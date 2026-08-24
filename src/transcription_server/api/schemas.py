@@ -74,4 +74,5 @@ def result_to_out(
         # flottants au millieme -- est un contrat de l'API, pas une propriete
         # empruntee a son fournisseur. On le tient ici, a la frontiere.
         timing={nom: round(valeur, 3) for nom, valeur in result.timing.items()},
+        channels_used=result.channels_used,
     )
