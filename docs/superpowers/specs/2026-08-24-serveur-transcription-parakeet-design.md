@@ -186,9 +186,24 @@ facteur limitant. Paramètres par défaut sur 24 Go : fenêtres de 480 s avec
 
 **Règle de recollage** : les mots du chunk *N* sont conservés jusqu'au **milieu**
 de la zone de recouvrement ; au-delà, ceux du chunk *N+1* prennent le relais.
-Cela évite à la fois les doublons et les mots tronqués en bord de fenêtre.
+Formellement, un mot appartient à la fenêtre dont l'intervalle de frontières
+contient le milieu du mot.
 
 Les timestamps de chaque chunk sont réoffsetés en absolu avant recollage.
+
+**Limite connue de cette règle.** La garantie « chaque mot survit exactement une
+fois » ne tient que si les deux fenêtres horodatent le mot **à l'identique**. Or
+elles transcrivent la zone de recouvrement indépendamment, avec un contexte
+différent : quelques dizaines de millisecondes d'écart suffisent à ce qu'un mot
+proche de la frontière soit rejeté des deux côtés (perdu) ou retenu des deux
+(dupliqué). L'impact théorique est d'au plus un mot par raccord, soit quelques
+mots par heure.
+
+Aucune déduplication par similarité de texte n'est prévue : elle supprimerait
+des répétitions légitimes (« non non »). La Task 16 mesure l'ampleur réelle du
+phénomène sur un fichier long avant d'envisager quoi que ce soit — construire
+une parade avant d'avoir observé le problème serait de la complexité
+spéculative.
 
 Ordre de grandeur attendu sur RTX 3090 : 1 h d'audio ≈ 1-2 min d'ASR et
 environ 1 min de diarization.
