@@ -175,6 +175,21 @@ mono-locuteur.
 Baissez `CHUNK_LENGTH_S`. La valeur par défaut de 480 s est calibrée pour
 24 Go.
 
+## Performances mesurées
+
+Relevé sur une RTX 3090, modèles déjà téléchargés :
+
+| | |
+|---|---|
+| Démarrage (chargement des deux modèles + préchauffage) | ~150 s |
+| Transcription | ~12× le temps réel |
+| Diarization | ~1 s pour 12 s d'audio |
+| VRAM occupée au repos | ~2,7 Go sur 24 |
+
+Une réunion d'une heure demande donc environ cinq minutes. Le démarrage est
+payé une fois : gardez le conteneur allumé plutôt que de le relancer à chaque
+fichier.
+
 ## Limites connues
 
 - **La langue détectée ne remonte pas.** Parakeet v3 l'identifie, mais le

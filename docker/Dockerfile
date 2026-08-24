@@ -32,9 +32,17 @@ COPY docker/pin_torch.py /tmp/pin_torch.py
 RUN python /tmp/pin_torch.py /tmp/constraints.txt
 
 COPY pyproject.toml README.md ./
-COPY src/ ./src/
+
+# Seul le fichier de paquet est copie avant l'installation : hatchling exige
+# qu'il existe, mais `pip install -e` n'enregistre qu'un chemin — le code est
+# lu a l'execution. Copier tout `src/` ici invaliderait le cache de cette
+# couche a chaque ligne modifiee, imposant dix minutes de reinstallation de
+# NeMo pour un caractere.
+COPY src/transcription_server/__init__.py ./src/transcription_server/__init__.py
 
 RUN pip install --no-cache-dir -c /tmp/constraints.txt -e ".[gpu,dev]"
+
+COPY src/ ./src/
 
 # Verification au build : si l'installation de NeMo ou pyannote a remplace le
 # torch CUDA par une roue CPU, autant l'apprendre maintenant qu'au premier
