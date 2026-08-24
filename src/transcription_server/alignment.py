@@ -88,7 +88,11 @@ def group_into_turns(
                 speaker=current_speaker,
                 start=current[0].start,
                 end=current[-1].end,
-                text=" ".join(w.text for w in current),
+                # Le filtre ecarte les jetons vides : un moteur peut en
+                # rendre, et sans lui deux mots encadrant un jeton vide se
+                # retrouveraient separes par une double espace dans le
+                # texte livre au client.
+                text=" ".join(w.text for w in current if w.text),
                 words=tuple(current),
             )
         )

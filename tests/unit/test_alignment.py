@@ -160,3 +160,15 @@ def test_group_into_turns_conserve_les_mots():
     words = [Word("un", 0.0, 0.5), Word("deux", 0.6, 1.0)]
     turns = group_into_turns(words, segs, turn_gap_s=1.0)
     assert turns[0].words == tuple(words)
+
+
+def test_group_into_turns_ignore_les_jetons_vides_dans_le_texte():
+    """Un jeton vide au milieu d'un tour ne doit pas laisser une double espace.
+
+    Il reste dans words -- c'est le rendu texte, et lui seul, qui l'ecarte.
+    """
+    words = [Word("bonjour", 0.0, 0.4), Word("", 0.5, 0.6), Word("tous", 0.7, 0.9)]
+    turns = group_into_turns(words, [], turn_gap_s=1.0)
+    assert len(turns) == 1
+    assert turns[0].text == "bonjour tous"
+    assert turns[0].words == tuple(words)

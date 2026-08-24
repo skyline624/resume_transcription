@@ -460,6 +460,10 @@ def test_le_pcm_transmis_est_un_tableau_mono_float32(short_wav):
     assert len(vus) == 1
     assert vus[0].ndim == 1
     assert vus[0].dtype == np.float32
+    # Tranche = vue numpy et non copie : aucune duplication memoire par
+    # fenetre, ce qui compte sur une heure d'audio (230 Mo de float32).
+    assert vus[0].base is not None
+    assert not vus[0].flags.owndata
 
 
 def test_un_audio_sans_aucun_mot_rend_un_resultat_vide_mais_valide(short_wav):
@@ -478,3 +482,183 @@ def test_un_audio_sans_aucun_mot_rend_un_resultat_vide_mais_valide(short_wav):
     assert result.turns == []
     assert result.speakers == [S0]
     assert result.duration == pytest.approx(3.0, rel=0.05)
+
+
+# --- Correctifs de la revue -------------------------------------------------
+# La revue a montre qu'un mutant « bonne longueur, mauvais decalage »
+# (begin = 0) passait les vingt tests precedents : toutes les fixtures etaient
+# du silence numerique, donc une tranche etait indiscernable d'une autre. Les
+# tests ci-dessous ferment ce trou et verrouillent les contrats restes nus.
+
+
+def _write_ramp_wav(path: Path, seconds: float, rate: int = 16000) -> None:
+    """WAV dont l'echantillon i vaut i % 30000 : chacun porte sa position.
+
+    Le silence rend toutes les tranches identiques, donc invisible tout defaut
+    de decalage. La rampe est le materiau minimal qui les distingue. Le modulo
+    reste sous 32768 : pas de saturation en int16, et pas de normalisation par
+    decode_to_pcm, dont le pic vaut 29999/32768 < 1.
+    """
+    total = int(seconds * rate)
+    with wave.open(str(path), "wb") as f:
+        f.setnchannels(1)
+        f.setsampwidth(2)
+        f.setframerate(rate)
+        f.writeframes(b"".join(struct.pack("<h", i % 30000) for i in range(total)))
+
+
+def test_chaque_fenetre_recoit_la_tranche_au_bon_decalage(tmp_path):
+    """Le contenu recu identifie la position de la tranche, pas sa seule taille.
+
+    Fenetres a 0.0 / 0.8 / 1.6 / 2.4 s, soit les echantillons 0 / 12800 /
+    25600 / 38400 ; la rampe vaut i % 30000, d'ou 38400 -> 8400.
+    """
+    path = tmp_path / "rampe.wav"
+    _write_ramp_wav(path, seconds=3.0)
+
+    premiers: list[int] = []
+    derniers: list[int] = []
+
+    class AsrQuiLitSesBornes:
+        name = "bornes"
+
+        def transcribe(self, audio, language):
+            premiers.append(int(round(float(audio[0]) * 32768)))
+            derniers.append(int(round(float(audio[-1]) * 32768)))
+            return []
+
+    run_pipeline(
+        path=path,
+        asr=AsrQuiLitSesBornes(),
+        diarization=NullDiarizationEngine(),
+        request=TranscriptionRequest(diarize=False),
+        chunk_length_s=1.0,
+        chunk_overlap_s=0.2,
+        turn_gap_s=1.0,
+    )
+    assert premiers == [0, 12800, 25600, 8400]
+    # La derniere fenetre atteint bien le dernier echantillon du fichier
+    # (47999 % 30000), donc rien n'est perdu en fin de parcours.
+    assert derniers[-1] == 17999
+
+
+def test_le_timing_ventile_les_phases(short_wav):
+    """decode, asr et diarization sont mesures separement, chacun sur sa phase.
+
+    Les moteurs dorment de facon inegale : le timing doit refleter cet ecart,
+    ce qu'un dict de zeros ne pourrait pas montrer.
+    """
+    import time
+
+    class AsrLent:
+        name = "asr-lent"
+
+        def transcribe(self, audio, language):
+            time.sleep(0.08)
+            return [Word("un", 0.0, 0.4)]
+
+    class DiarRapide:
+        name = "diar-rapide"
+
+        def diarize(self, audio, num_speakers, min_speakers, max_speakers):
+            time.sleep(0.02)
+            return [SpeakerSegment(S0, 0.0, 3.0)]
+
+    result = run_pipeline(
+        path=short_wav,
+        asr=AsrLent(),
+        diarization=DiarRapide(),
+        request=TranscriptionRequest(diarize=True),
+        chunk_length_s=480.0,
+        chunk_overlap_s=15.0,
+        turn_gap_s=1.0,
+    )
+    # Marges larges : on verrouille la ventilation, pas la precision d'horloge.
+    assert result.timing["asr"] >= 0.06
+    assert result.timing["diarization"] >= 0.01
+    assert result.timing["asr"] > result.timing["diarization"]
+    # ffmpeg est un sous-processus : son cout ne peut pas etre nul.
+    assert result.timing["decode"] > 0.0
+
+
+def test_les_defauts_de_la_requete_sont_le_contrat():
+    """Les Tasks 9, 10, 12 et 13 consomment ces defauts ; ils sont verrouilles.
+
+    diarize=True bascule a False passerait inapercu partout ailleurs : chaque
+    appel de ce fichier fournit le drapeau explicitement.
+    """
+    assert TranscriptionRequest() == TranscriptionRequest(
+        language=None,
+        diarize=True,
+        num_speakers=None,
+        min_speakers=None,
+        max_speakers=None,
+    )
+    defauts = TranscriptionRequest()
+    assert defauts.language is None
+    assert defauts.diarize is True
+    assert defauts.num_speakers is None
+    assert defauts.min_speakers is None
+    assert defauts.max_speakers is None
+
+
+def test_la_requete_et_le_resultat_sont_immuables(short_wav):
+    """frozen=True fait partie du contrat des deux dataclasses."""
+    import dataclasses
+
+    result = run_pipeline(
+        path=short_wav,
+        asr=StubAsrEngine([Word("un", 0.0, 0.5)]),
+        diarization=NullDiarizationEngine(),
+        request=TranscriptionRequest(diarize=False),
+        chunk_length_s=480.0,
+        chunk_overlap_s=15.0,
+        turn_gap_s=1.0,
+    )
+    with pytest.raises(dataclasses.FrozenInstanceError):
+        result.text = "autre chose"
+    with pytest.raises(dataclasses.FrozenInstanceError):
+        TranscriptionRequest().diarize = False
+
+
+def test_des_mots_desordonnes_ressortent_tries(short_wav):
+    """group_into_turns exige des mots tries et devient silencieusement faux
+    sinon. Le pipeline ne trie pas lui-meme : il herite du tri final de
+    merge_windows. Cette dependance implicite est verrouillee ici."""
+    asr = StubAsrEngine(
+        [Word("trois", 2.0, 2.4), Word("un", 0.0, 0.4), Word("deux", 1.0, 1.4)]
+    )
+    result = run_pipeline(
+        path=short_wav,
+        asr=asr,
+        diarization=NullDiarizationEngine(),
+        request=TranscriptionRequest(diarize=False),
+        chunk_length_s=480.0,
+        chunk_overlap_s=15.0,
+        turn_gap_s=10.0,
+    )
+    assert result.text == "un deux trois"
+    mots = [w for t in result.turns for w in t.words]
+    assert [w.start for w in mots] == sorted(w.start for w in mots)
+    # Sur une entree desordonnee, un tour sortirait avec end < start.
+    assert all(t.end >= t.start for t in result.turns)
+
+
+def test_un_jeton_vide_au_milieu_d_un_tour_ne_double_pas_l_espace(short_wav):
+    """Cas complementaire du jeton vide formant un tour a lui seul : ici les
+    trois mots tiennent dans un seul tour."""
+    result = run_pipeline(
+        path=short_wav,
+        asr=StubAsrEngine(
+            [Word("bonjour", 0.0, 0.4), Word("", 0.5, 0.6), Word("tous", 0.7, 0.9)]
+        ),
+        diarization=NullDiarizationEngine(),
+        request=TranscriptionRequest(diarize=False),
+        chunk_length_s=480.0,
+        chunk_overlap_s=15.0,
+        turn_gap_s=1.0,
+    )
+    assert len(result.turns) == 1
+    assert result.text == "bonjour tous"
+    # Le jeton vide reste dans words : seul le rendu texte l'ecarte.
+    assert len(result.turns[0].words) == 3
