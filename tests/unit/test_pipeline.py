@@ -904,3 +904,58 @@ def test_split_rend_les_tours_dans_l_ordre_chronologique(tmp_path):
     assert resultat.text == "debut milieu fin", (
         f"ordre de lecture incorrect : {resultat.text!r}"
     )
+
+
+@pytest.mark.skipif(shutil.which("ffmpeg") is None, reason="ffmpeg absent du PATH")
+def test_la_vram_est_rendue_entre_les_canaux_et_a_la_fin(wav_stereo, monkeypatch):
+    """L'allocateur de torch garde la memoire liberee ; sans restitution, la
+    diarization du canal suivant s'empile sur celle du precedent.
+
+    Mesure sur un enregistrement reel de 110 min a deux canaux : 12,6 Go apres
+    le premier canal, 21 Go apres le second, et 21 Go encore une fois la
+    requete terminee. La requete suivante, sur un fichier a peine plus gros,
+    aurait sature les 24 Go.
+    """
+    from transcription_server import pipeline as pipeline_module
+
+    appels = []
+    monkeypatch.setattr(
+        pipeline_module, "empty_cache", lambda: appels.append(1)
+    )
+
+    class DiarConstante:
+        name = "constante"
+
+        def diarize(self, audio, num_speakers, min_speakers, max_speakers):
+            return [SpeakerSegment("SPEAKER_00", 0.0, 1.0)]
+
+    run_pipeline(
+        path=wav_stereo,
+        asr=StubAsrEngine([Word("mot", 0.1, 0.4)]),
+        diarization=DiarConstante(),
+        request=TranscriptionRequest(diarize=True, channel_mode="split"),
+        chunk_length_s=480.0,
+        chunk_overlap_s=15.0,
+        turn_gap_s=1.0,
+    )
+    # Deux canaux diarises, plus la restitution finale.
+    assert len(appels) == 3, f"restitutions attendues : 3, obtenues : {len(appels)}"
+
+
+def test_la_vram_est_rendue_meme_sans_diarization(short_wav, monkeypatch):
+    from transcription_server import pipeline as pipeline_module
+
+    appels = []
+    monkeypatch.setattr(
+        pipeline_module, "empty_cache", lambda: appels.append(1)
+    )
+    run_pipeline(
+        path=short_wav,
+        asr=StubAsrEngine([Word("mot", 0.1, 0.4)]),
+        diarization=NullDiarizationEngine(),
+        request=TranscriptionRequest(diarize=False),
+        chunk_length_s=480.0,
+        chunk_overlap_s=15.0,
+        turn_gap_s=1.0,
+    )
+    assert appels == [1], "la restitution finale doit avoir lieu sans diarization"

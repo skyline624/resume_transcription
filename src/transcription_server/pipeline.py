@@ -20,6 +20,7 @@ from transcription_server.audio import (
 from transcription_server.chunking import merge_windows, offset_words, plan_windows
 from transcription_server.diarization.engine import DiarizationEngine
 from transcription_server.domain import SpeakerSegment, Turn, Word
+from transcription_server.runtime import empty_cache
 
 ChannelMode = Literal["mix", "split"]
 
@@ -162,6 +163,13 @@ def run_pipeline(
                 min_speakers=request.min_speakers,
                 max_speakers=request.max_speakers,
             )
+            # L'allocateur de torch garde par devers lui la memoire liberee.
+            # Sans cette restitution, la diarization du canal suivant s'empile
+            # sur celle du precedent : mesure sur un enregistrement de 110 min
+            # a deux canaux, 12,6 Go apres le premier, 21 Go apres le second.
+            # Le cout est une synchronisation, negligeable en regard des
+            # minutes que dure une diarization.
+            empty_cache()
         diarization_elapsed = time.perf_counter() - started
 
     started = time.perf_counter()
@@ -196,6 +204,11 @@ def run_pipeline(
     # Les canaux sont transcrits independamment : leurs tours doivent etre
     # remis dans l'ordre chronologique pour que la lecture suive la reunion.
     turns.sort(key=lambda tour: (tour.start, tour.end))
+
+    # Le travail est fini : ce que l'allocateur retient encore ne servira
+    # plus a cette requete, et le retenir ferait echouer la suivante sur un
+    # fichier a peine plus gros.
+    empty_cache()
 
     return TranscriptionResult(
         text=" ".join(t.text for t in turns if t.text),

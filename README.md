@@ -212,8 +212,18 @@ rendre une liste de locuteurs vide, qui vous ferait croire à un enregistrement
 mono-locuteur.
 
 **Mémoire GPU insuffisante sur un fichier long.**
-Baissez `CHUNK_LENGTH_S`. La valeur par défaut de 480 s est calibrée pour
-24 Go.
+Baissez `CHUNK_LENGTH_S` — la valeur par défaut de 480 s est calibrée pour
+24 Go. Sachez cependant que **c'est la diarization qui domine, pas la
+transcription** : elle traite le fichier d'un seul tenant, sans découpage. Sur
+110 minutes elle occupe environ 12 Go et représente 83 % du temps de
+traitement. Si la mémoire manque, `ENABLE_DIARIZATION=false` libère bien plus
+que n'importe quel réglage de fenêtre.
+
+**Trop de locuteurs détectés.**
+Sur une réunion de 110 minutes à 6-7 personnes, pyannote en a rapporté 11 : il
+sur-segmente quand les voix se ressemblent ou que la qualité varie. Bornez-le
+avec `max_speakers`, ou fixez `num_speakers` si vous connaissez le nombre
+exact.
 
 ## Performances mesurées
 
@@ -222,13 +232,33 @@ Relevé sur une RTX 3090, modèles déjà téléchargés :
 | | |
 |---|---|
 | Démarrage (chargement des deux modèles + préchauffage) | ~150 s |
-| Transcription | ~12× le temps réel |
-| Diarization | ~1 s pour 12 s d'audio |
-| VRAM occupée au repos | ~2,7 Go sur 24 |
+| Transcription seule | ~95× le temps réel |
+| Diarization | ~12× le temps réel |
+| VRAM au repos | ~2,7 Go sur 24 |
+| VRAM sur 110 min en `split` | ~21 Go sur 24 |
 
-Une réunion d'une heure demande donc environ cinq minutes. Le démarrage est
-payé une fois : gardez le conteneur allumé plutôt que de le relancer à chaque
-fichier.
+Relevés bout en bout, sur des enregistrements réels :
+
+| Fichier | Mode | Durée de traitement |
+|---|---|---|
+| 51 min, stéréo | `mix` | 2 min 28 |
+| 51 min, stéréo | `split` | 3 min 51 |
+| 110 min, stéréo | `split` | 11 min |
+
+**La diarization domine largement** : 557 s sur les 667 s des 110 minutes, soit
+83 %. La transcription elle-même n'en prend que 70. C'est aussi elle qui
+consomme la VRAM, car elle traite le fichier entier sans le découper.
+
+Le démarrage (~150 s) est payé une fois : gardez le conteneur allumé plutôt que
+de le relancer à chaque fichier.
+
+**Limite d'upload.** Un enregistrement de deux heures en WAV 48 kHz stéréo pèse
+1,2 Go et dépasse le plafond de 1 Go. Convertissez-le d'abord — le serveur
+ramène de toute façon tout à 16 kHz, donc **sans aucune perte de qualité** :
+
+```powershell
+ffmpeg -i long.wav -ac 2 -ar 16000 -c:a pcm_s16le pret.wav
+```
 
 ## Limites connues
 
