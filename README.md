@@ -235,14 +235,14 @@ Relevé sur une RTX 3090, modèles déjà téléchargés :
 | Transcription seule | ~95× le temps réel |
 | Diarization | ~12× le temps réel |
 | VRAM au repos | ~2,7 Go sur 24 |
-| VRAM sur 110 min en `split` | ~21 Go sur 24 |
+| VRAM après une requête | ~3,1 Go, **stable** sur des appels répétés |
 
 Relevés bout en bout, sur des enregistrements réels :
 
 | Fichier | Mode | Durée de traitement |
 |---|---|---|
 | 51 min, stéréo | `mix` | 2 min 28 |
-| 51 min, stéréo | `split` | 3 min 51 |
+| 51 min, stéréo | `split` | 3 min 09 |
 | 110 min, stéréo | `split` | 11 min |
 
 **La diarization domine largement** : 557 s sur les 667 s des 110 minutes, soit
