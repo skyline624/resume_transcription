@@ -20,7 +20,10 @@ gpu = [
 dev = [
     "pytest>=8.3",
     "pytest-asyncio>=0.24",
-    "httpx>=0.27",
+    # httpx2 et non httpx : starlette >= 1.6 tente `import httpx2 as httpx`
+    # dans son TestClient et deprecie l'ancien, avec un avertissement que
+    # `filterwarnings = ["error"]` transformerait en echec.
+    "httpx2>=2.0",
 ]
 
 [build-system]
@@ -37,3 +40,8 @@ markers = [
 ]
 addopts = "-m 'not gpu'"
 asyncio_mode = "auto"
+# L'exigence de sortie immaculee cesse d'etre une convention : tout
+# avertissement devient un echec. Un filtre d'exception se justifie sur un
+# message precis, jamais sur une classe entiere -- ce dernier avalerait aussi
+# la prochaine depreciation, c'est-a-dire exactement le signal recherche.
+filterwarnings = ["error"]

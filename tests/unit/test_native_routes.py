@@ -16,7 +16,7 @@ import wave
 import pytest
 from fastapi import HTTPException
 from fastapi.testclient import TestClient
-from httpx import ASGITransport, AsyncClient
+from httpx2 import ASGITransport, AsyncClient
 
 from transcription_server.api.native_routes import _save_upload
 from transcription_server.app import create_app
