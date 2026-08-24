@@ -175,11 +175,23 @@ Le modèle doit exister dans votre installation Ollama (`ollama list`). Un
 modèle suffixé `:cloud` **ferait transiter la conversation par les serveurs
 d'Ollama** — à ne poser qu'en connaissance de cause.
 
-Mesuré avec `qwen3.8-27b` (Q4_K_M) : **1 min 53** pour une réunion de 51 min
-(12 600 tokens). Attention à la VRAM — le modèle occupe 18 Go, et avec les 3 Go
-du serveur de transcription on atteint 23,6 Go sur 24. Sur une carte plus
-petite, prenez un modèle plus léger ou posez `ENABLE_DIARIZATION=false` pendant
-la rédaction.
+Mesuré avec `qwen3.8-27b` (Q4_K_M) : **1 min 53** pour une réunion de 51 min,
+**5 min 43** pour une réunion de 110 min (17 400 tokens).
+
+> **Les deux modèles ne tiennent pas ensemble sur 24 Go.** Ollama occupe 17,5 Go
+> et la transcription en demande jusqu'à 21. Appelés l'un après l'autre, ils se
+> séquencent naturellement — la transcription rend sa mémoire avant qu'Ollama
+> charge la sienne. Mais **si Ollama tient encore son modèle quand vous lancez
+> une transcription, celle-ci échouera faute de place**. Deux parades :
+>
+> ```powershell
+> ollama stop qwen3.8-27b-64k:latest        # libérer immédiatement
+> $env:OLLAMA_KEEP_ALIVE = "60"             # ou raccourcir la rétention à 60 s
+> ```
+>
+> Cela concerne surtout `/summarize` appelé avec `file` : il transcrit puis
+> rédige dans la même requête. Sur une carte plus petite, prenez un modèle de
+> rédaction plus léger.
 
 Si Ollama est absent ou le modèle introuvable, `/summarize` répond **503** avec
 un message actionnable — et la transcription, elle, continue de fonctionner.
@@ -281,11 +293,11 @@ Relevé sur une RTX 3090, modèles déjà téléchargés :
 
 Relevés bout en bout, sur des enregistrements réels :
 
-| Fichier | Mode | Durée de traitement |
-|---|---|---|
-| 51 min, stéréo | `mix` | 2 min 28 |
-| 51 min, stéréo | `split` | 3 min 09 |
-| 110 min, stéréo | `split` | 11 min |
+| Fichier | Mode | Transcription | Compte-rendu |
+|---|---|---|---|
+| 51 min, stéréo | `mix` | 2 min 28 | — |
+| 51 min, stéréo | `split` | 3 min 09 | 1 min 53 |
+| 110 min, stéréo | `split` | 6 min 29 | 5 min 43 |
 
 **La diarization domine largement** : 557 s sur les 667 s des 110 minutes, soit
 83 %. La transcription elle-même n'en prend que 70. C'est aussi elle qui
