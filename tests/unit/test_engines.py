@@ -4,6 +4,8 @@ import numpy as np
 import pytest
 
 from transcription_server.asr.engine import AsrEngine, StubAsrEngine
+from transcription_server.asr.nemo_parakeet import NemoParakeetEngine
+from transcription_server.diarization.pyannote_engine import PyannoteEngine
 from transcription_server.diarization.engine import (
     DiarizationEngine,
     NullDiarizationEngine,
@@ -75,15 +77,19 @@ def _parametres(fonction) -> list[tuple[str, object]]:
     ]
 
 
-# Parametres a une seule entree pour l'ASR : la Task 12 y ajoutera le moteur
-# NeMo, la Task 13 le moteur pyannote dans la liste d'en dessous.
-@pytest.mark.parametrize("implementation", [StubAsrEngine])
+# Les moteurs reels y sont inscrits : leurs imports lourds etant paresseux,
+# les classes s'importent sans l'extra `gpu` et ces tests tournent sur Windows.
+# C'est ce qui attrape ce qu'`isinstance` ne voit pas — un renommage de
+# parametre, un reordonnancement, un `*args`, un keyword-only — sans quoi un
+# moteur mal signe passerait toute la suite et ne casserait qu'a la premiere
+# requete HTTP dans le conteneur.
+@pytest.mark.parametrize("implementation", [StubAsrEngine, NemoParakeetEngine])
 def test_la_signature_de_transcribe_suit_le_protocol(implementation):
     assert _parametres(implementation.transcribe) == _parametres(AsrEngine.transcribe)
 
 
 @pytest.mark.parametrize(
-    "implementation", [NullDiarizationEngine, StubDiarizationEngine]
+    "implementation", [NullDiarizationEngine, StubDiarizationEngine, PyannoteEngine]
 )
 def test_la_signature_de_diarize_suit_le_protocol(implementation):
     assert _parametres(implementation.diarize) == _parametres(DiarizationEngine.diarize)
