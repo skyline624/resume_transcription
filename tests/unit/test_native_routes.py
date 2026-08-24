@@ -454,14 +454,14 @@ def test_un_octet_au_dessus_de_la_limite_donne_413():
 def test_aucun_fichier_temporaire_apres_succes(client, tmp_path, monkeypatch):
     monkeypatch.setattr(tempfile, "tempdir", str(tmp_path))
     assert client.post("/transcribe", files=_fichier()).status_code == 200
-    assert list(tmp_path.glob("*.wav")) == []
+    assert list(tmp_path.iterdir()) == []
 
 
 def test_aucun_fichier_temporaire_apres_400(client, tmp_path, monkeypatch):
     monkeypatch.setattr(tempfile, "tempdir", str(tmp_path))
     reponse = client.post("/transcribe", files=_fichier("junk.wav", b"pas un son"))
     assert reponse.status_code == 400
-    assert list(tmp_path.glob("*.wav")) == []
+    assert list(tmp_path.iterdir()) == []
 
 
 def test_aucun_fichier_temporaire_apres_413(tmp_path, monkeypatch):
@@ -470,7 +470,26 @@ def test_aucun_fichier_temporaire_apres_413(tmp_path, monkeypatch):
         "/transcribe", files=_fichier("gros.wav", b"\x00" * (2 * 1024 * 1024))
     )
     assert reponse.status_code == 413
-    assert list(tmp_path.glob("*.wav")) == []
+    assert list(tmp_path.iterdir()) == []
+
+
+def test_une_extension_demesuree_ne_fait_pas_tomber_la_route(
+    client, tmp_path, monkeypatch
+):
+    # Le nom du fichier est entierement controle par l'appelant : sans borne
+    # sur le suffixe, la creation du temporaire echoue (nom trop long) et la
+    # route rend un 500.
+    monkeypatch.setattr(tempfile, "tempdir", str(tmp_path))
+    reponse = client.post("/transcribe", files=_fichier("piege." + "a" * 300))
+
+    assert reponse.status_code == 200
+    assert reponse.json()["text"] == "bonjour merci"
+    assert list(tmp_path.iterdir()) == []
+
+
+def test_un_nom_sans_extension_est_accepte(client):
+    reponse = client.post("/transcribe", files=_fichier("sans_extension"))
+    assert reponse.status_code == 200
 
 
 class UploadCassee:
@@ -494,7 +513,7 @@ async def test_save_upload_ne_laisse_rien_si_la_lecture_echoue(tmp_path, monkeyp
     with pytest.raises(OSError):
         await _save_upload(UploadCassee(), 10 * 1024 * 1024)
 
-    assert list(tmp_path.glob("*.wav")) == []
+    assert list(tmp_path.iterdir()) == []
 
 
 class UploadSimple:
@@ -544,7 +563,7 @@ async def test_save_upload_ne_laisse_rien_si_la_fermeture_echoue(tmp_path, monke
     with pytest.raises(OSError):
         await _save_upload(UploadSimple(), 10 * 1024 * 1024)
 
-    assert list(tmp_path.glob("*.wav")) == []
+    assert list(tmp_path.iterdir()) == []
 
 
 def test_save_upload_garde_son_nom_et_sa_signature():

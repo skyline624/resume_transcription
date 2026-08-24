@@ -25,6 +25,13 @@ ResponseFormat = Literal["json", "text", "srt", "vtt", "dialogue"]
 # retenue par morceau lu.
 _TAILLE_MORCEAU = 1024 * 1024
 
+# Le suffixe du fichier temporaire vient du nom envoye par le client. Il ne
+# sert qu'au confort de debogage -- ffmpeg reconnait le format au contenu, pas
+# a l'extension -- mais il part tel quel dans un nom de fichier : une extension
+# de plusieurs centaines de caracteres fait echouer la creation du temporaire
+# et rend un 500 sur une entree entierement controlee par l'appelant.
+_SUFFIXE_MAX = 16
+
 
 async def _save_upload(upload: UploadFile, max_bytes: int) -> Path:
     """Ecrit l'upload dans un fichier temporaire, en refusant les trop gros.
@@ -41,7 +48,7 @@ async def _save_upload(upload: UploadFile, max_bytes: int) -> Path:
     ailleurs obligatoire sous Windows, ou l'on ne supprime pas un fichier
     encore ouvert.
     """
-    suffix = Path(upload.filename or "audio").suffix or ".bin"
+    suffix = (Path(upload.filename or "audio").suffix or ".bin")[:_SUFFIXE_MAX]
     handle = tempfile.NamedTemporaryFile(delete=False, suffix=suffix)
     path = Path(handle.name)
     written = 0
