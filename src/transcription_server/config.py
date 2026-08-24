@@ -15,7 +15,12 @@ class Settings(BaseSettings):
         case_sensitive=False,
     )
 
-    hf_token: str | None = None
+    # repr=False masque le token dans repr(), str() et donc dans la sortie de
+    # pytest : sans lui, une assertion qui echoue sur un Settings construit avec
+    # le vrai token l'imprimerait en clair. Ne couvre ni model_dump() ni
+    # ValidationError.errors(), qui exposent le token integral -- pour ceux-la,
+    # utiliser errors(include_input=False) et ne jamais serialiser le modele.
+    hf_token: str | None = Field(default=None, repr=False)
 
     asr_model: str = "nvidia/parakeet-tdt-0.6b-v3"
     diarization_model: str = "pyannote/speaker-diarization-community-1"

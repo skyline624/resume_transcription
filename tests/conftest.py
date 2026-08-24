@@ -1,7 +1,23 @@
 """Fixtures partagees par toute la suite.
 
-Les deux fixtures sont autouse : elles couvrent aussi les tests a venir qui
-construiront un Settings ou appelleront get_settings().
+Les deux fixtures sont autouse. Settings lit deux sources distinctes, et une
+seule est neutralisee ici -- s'y fier pour l'autre serait une erreur :
+
+- `os.environ` : neutralise par `environnement_neutre`.
+- le fichier `.env`, via `env_file=".env"` dans `Settings.model_config` : **non
+  neutralise**. Le chemin est relatif au CWD et aucune fixture ne fait de
+  `chdir`. Un test lance depuis la racine du depot qui construit `Settings()`
+  ou appelle `get_settings()` sans `_env_file=None` ni
+  `monkeypatch.chdir(tmp_path)` chargera donc le vrai token du `.env`. Le champ
+  `hf_token` porte `repr=False`, ce qui l'empeche de ressortir dans la sortie
+  de pytest, mais il est bel et bien dans l'objet.
+
+Pour se soustraire a la purge d'environnement -- par exemple pour exporter
+DEVICE ou PORT avant de demarrer l'application -- il faut poser les variables
+*apres* `environnement_neutre` : dans le corps du test, ou depuis une fixture
+fonction-scope qui declare `environnement_neutre` dans ses arguments. Une
+fixture de portee module ou session serait instanciee avant, donc silencieusement
+effacee ; l'echec se presenterait comme un « field required » trompeur.
 """
 
 import pytest
@@ -38,6 +54,12 @@ def environnement_neutre(monkeypatch):
     """
     for nom in VARIABLES_DE_CONFIGURATION:
         monkeypatch.delenv(nom, raising=False)
+        # `case_sensitive=False` fait minusculer par pydantic-settings toutes
+        # les cles de os.environ : sous POSIX, ou la casse est significative,
+        # un `hf_token=` exporte en minuscules serait lu malgre la purge de la
+        # forme majuscule. Sous Windows os.environ normalise deja, ce second
+        # delenv y est simplement sans effet.
+        monkeypatch.delenv(nom.lower(), raising=False)
 
 
 @pytest.fixture(autouse=True)

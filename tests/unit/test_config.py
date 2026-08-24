@@ -108,18 +108,14 @@ def test_valeurs_hors_bornes_sont_rejetees(champ, valeur):
 
 
 def test_borne_positive_de_chunk_length_s():
-    # chunk_length_s <= 0 est deja rejete par la regle de coherence, puisque
-    # chunk_overlap_s >= 0 >= chunk_length_s : la borne gt=0 n'est donc jamais
-    # la cause unique du rejet. Pour l'atteindre, on invalide aussi le
-    # recouvrement : la validation de champ echoue alors avant le validateur de
-    # modele, et l'erreur nommee est bien celle de la borne.
+    # Un simple pytest.raises ne distinguerait rien ici : sans la borne gt=0,
+    # chunk_length_s=0.0 serait rejete quand meme, par la regle de coherence
+    # (chunk_overlap_s=15.0 >= 0.0). La borne n'est pas *necessaire* au rejet,
+    # elle en est seulement la cause quand elle existe -- un validateur
+    # mode="after" ne s'execute pas si la validation de champ a deja echoue.
+    # Seule la faute nommee separe donc le code correct du mutant.
     with pytest.raises(ValidationError) as capture:
-        Settings(
-            _env_file=None,
-            hf_token=TOKEN,
-            chunk_length_s=0.0,
-            chunk_overlap_s=-1.0,
-        )
+        Settings(_env_file=None, hf_token=TOKEN, chunk_length_s=0.0)
     # include_input=False : sans lui, les valeurs d'entree -- dont le token --
     # figureraient dans le message affiche si l'assertion echouait.
     fautes = {
@@ -127,6 +123,17 @@ def test_borne_positive_de_chunk_length_s():
         for faute in capture.value.errors(include_input=False)
     }
     assert (("chunk_length_s",), "greater_than") in fautes
+
+
+def test_token_masque_dans_le_repr_mais_lisible_par_l_attribut():
+    # Les tests GPU de la tache 13 construiront un Settings avec le vrai token,
+    # sans isolation, parce qu'ils en ont besoin pour charger pyannote. Sans
+    # repr=False, la moindre assertion en echec imprimerait le secret dans la
+    # sortie pytest -- rendu de l'assertion et bloc --showlocals.
+    s = Settings(_env_file=None, hf_token=TOKEN)
+    assert TOKEN not in repr(s)
+    assert TOKEN not in str(s)
+    assert s.hf_token == TOKEN
 
 
 def test_token_vide_est_traite_comme_absent():
