@@ -55,7 +55,7 @@ def to_vtt(turns: list[Turn]) -> str:
 
 
 def to_dialogue(turns: list[Turn]) -> str:
-    lines = []
+    lines: list[str] = []
     for turn in turns:
         speaker = turn.speaker or UNKNOWN_SPEAKER
         lines.append(f"[{_short_timestamp(turn.start)}] {speaker}: {turn.text}")
