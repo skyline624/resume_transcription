@@ -44,6 +44,13 @@ Ces contraintes s'appliquent à **toutes** les tâches. Valeurs reprises telles 
   transmettre `settings` et lire l'attribut au point d'usage.
 - **Français accentué** dans toute chaîne destinée à un humain, messages
   d'erreur compris.
+- **Ne jamais renvoyer `str(exc)` d'une `AudioDecodeError` dans une réponse
+  HTTP.** Elle porte le chemin du fichier temporaire et la sortie d'erreur brute
+  de ffmpeg, ce qui divulguerait l'arborescence du conteneur. Dans les tâches 9
+  et 10 : `logger.warning("Échec de décodage : %s", exc)` puis
+  `HTTPException(400, detail="Le fichier audio n'a pas pu être décodé.")`.
+  Le détail reste porté par l'exception — c'est le seul diagnostic de
+  l'exploitant — mais la décision d'exposition appartient à la frontière HTTP.
 
 ### Prérequis avant la Task 1
 
