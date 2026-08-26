@@ -5,7 +5,7 @@ import logging
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import JSONResponse
 
-from transcription_server.api import native_routes, openai_routes, summary_routes
+from transcription_server.api import native_routes, openai_routes, summary_routes, tts_routes
 from transcription_server.asr.engine import AsrEngine
 from transcription_server.config import Settings
 from transcription_server.diarization.engine import (
@@ -19,6 +19,8 @@ from transcription_server.summary.engine import (
 )
 from transcription_server.state import AppState
 from transcription_server.vad.engine import FixedWindowVadEngine, VadEngine
+from transcription_server.tts.client import TtsClient, UnavailableTtsClient
+from transcription_server.tts.profiles import VoiceProfileRepository
 
 logger = logging.getLogger(__name__)
 
@@ -39,6 +41,8 @@ def create_app(
     device_info: dict | None = None,
     summary: SummaryEngine | None = None,
     vad: VadEngine | None = None,
+    tts: TtsClient | None = None,
+    voice_profiles: VoiceProfileRepository | None = None,
 ) -> FastAPI:
     """Assemble l'application autour de moteurs deja construits.
 
@@ -55,6 +59,8 @@ def create_app(
         summary=summary or UnavailableSummaryEngine(),
         vad=vad,
         device_info=device_info or {},
+        tts=tts or UnavailableTtsClient(),
+        voice_profiles=voice_profiles,
     )
 
     @app.exception_handler(HTTPException)
@@ -62,12 +68,22 @@ def create_app(
         request: Request, exc: HTTPException
     ) -> JSONResponse:
         """Uniformise les erreurs au format OpenAI sur toutes les routes."""
+        detail = exc.detail
+        extras: dict[str, object] = {}
+        if isinstance(detail, dict):
+            message = str(detail.get("message", "Requête invalide."))
+            for key in ("param", "code"):
+                if key in detail:
+                    extras[key] = detail[key]
+        else:
+            message = str(detail)
         return JSONResponse(
             status_code=exc.status_code,
             content={
                 "error": {
-                    "message": exc.detail,
+                    "message": message,
                     "type": _ERROR_TYPES.get(exc.status_code, "server_error"),
+                    **extras,
                 }
             },
         )
@@ -97,6 +113,7 @@ def create_app(
     app.include_router(native_routes.router)
     app.include_router(openai_routes.router)
     app.include_router(summary_routes.router)
+    app.include_router(tts_routes.router)
     return app
 
 

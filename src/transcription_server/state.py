@@ -10,6 +10,8 @@ from transcription_server.config import Settings
 from transcription_server.diarization.engine import DiarizationEngine
 from transcription_server.summary.engine import SummaryEngine
 from transcription_server.vad.engine import VadEngine
+from transcription_server.tts.client import TtsClient, UnavailableTtsClient
+from transcription_server.tts.profiles import VoiceProfileRepository
 
 
 @dataclass
@@ -20,6 +22,8 @@ class AppState:
     summary: SummaryEngine
     vad: VadEngine | None = None
     device_info: dict = field(default_factory=dict)
+    tts: TtsClient = field(default_factory=UnavailableTtsClient)
+    voice_profiles: VoiceProfileRepository | None = None
 
     # Un seul travail sur le GPU a la fois : deux inferences concurrentes se
     # disputeraient la VRAM et feraient tomber le serveur en OOM plutot que de
