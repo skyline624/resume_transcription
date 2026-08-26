@@ -10,6 +10,7 @@ dependencies = [
     "pydantic>=2.9",
     "pydantic-settings>=2.6",
     "numpy>=1.26",
+    "aiohttp>=3.10,<4",
 ]
 
 [project.optional-dependencies]
