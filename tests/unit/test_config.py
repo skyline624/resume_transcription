@@ -28,6 +28,21 @@ def test_defauts_conformes_a_la_spec():
     assert s.host == "0.0.0.0"
     assert s.port == 8000
     assert s.max_upload_mb == 1024
+    assert s.enable_tts is True
+    assert s.tts_default_language == "fr"
+    assert s.tts_precision == "bfloat16"
+    assert s.tts_worker_socket == Path("/run/qwen-tts/worker.sock")
+    assert s.tts_idle_unload_s == 300.0
+
+
+def test_reference_tts_minimale_doit_etre_inferieure_au_maximum():
+    with pytest.raises(ValidationError, match="TTS_REFERENCE_MIN_S"):
+        Settings(
+            _env_file=None,
+            hf_token=TOKEN,
+            tts_reference_min_s=30.0,
+            tts_reference_max_s=30.0,
+        )
 
 
 def test_max_upload_bytes():

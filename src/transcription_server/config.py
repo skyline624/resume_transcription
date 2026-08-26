@@ -1,6 +1,7 @@
 """Configuration du serveur, lue depuis l'environnement et le fichier .env."""
 
 from functools import lru_cache
+from pathlib import Path
 from typing import Literal
 
 from pydantic import Field, model_validator
@@ -52,6 +53,24 @@ class Settings(BaseSettings):
     # depasse largement les delais HTTP habituels.
     summary_timeout_s: float = Field(default=900.0, gt=0)
 
+    # --- Synthèse vocale Qwen3-TTS ---
+    enable_tts: bool = True
+    tts_worker_socket: Path = Path("/run/qwen-tts/worker.sock")
+    tts_custom_voice_model: str = "Qwen/Qwen3-TTS-12Hz-1.7B-CustomVoice"
+    tts_clone_model: str = "Qwen/Qwen3-TTS-12Hz-1.7B-Base"
+    tts_voice_design_model: str = "Qwen/Qwen3-TTS-12Hz-1.7B-VoiceDesign"
+    tts_default_language: str = "fr"
+    tts_precision: Literal["bfloat16"] = "bfloat16"
+    tts_idle_unload_s: float = Field(default=300.0, ge=0)
+    tts_load_timeout_s: float = Field(default=300.0, gt=0)
+    tts_generation_timeout_s: float = Field(default=900.0, gt=0)
+    tts_max_input_chars: int = Field(default=4096, gt=0, le=4096)
+    tts_reference_min_s: float = Field(default=3.0, gt=0)
+    tts_reference_max_s: float = Field(default=30.0, gt=0)
+    tts_reference_min_dbfs: float = Field(default=-60.0, lt=0)
+    tts_reference_max_clipped_ratio: float = Field(default=0.01, ge=0, le=1)
+    voice_store_path: Path = Path("/app/voices")
+
     host: str = "0.0.0.0"
     port: int = Field(default=8000, gt=0, lt=65536)
     max_upload_mb: int = Field(default=1024, gt=0)
@@ -70,6 +89,11 @@ class Settings(BaseSettings):
             raise ValueError(
                 "VAD_FALLBACK_OVERLAP_S doit être strictement inférieur à "
                 "VAD_MAX_SEGMENT_S."
+            )
+        if self.tts_reference_min_s >= self.tts_reference_max_s:
+            raise ValueError(
+                "TTS_REFERENCE_MIN_S doit être strictement inférieur à "
+                "TTS_REFERENCE_MAX_S."
             )
         if self.enable_diarization and not self.hf_token:
             raise ValueError(
