@@ -94,6 +94,9 @@ async def summarize(
                     chunk_length_s=settings.chunk_length_s,
                     chunk_overlap_s=settings.chunk_overlap_s,
                     turn_gap_s=settings.turn_gap_s,
+                    vad=state.vad,
+                    vad_fallback_length_s=settings.vad_max_segment_s,
+                    vad_fallback_overlap_s=settings.vad_fallback_overlap_s,
                 )
         except AudioDecodeError as exc:
             logger.warning("Échec de décodage : %s", exc)

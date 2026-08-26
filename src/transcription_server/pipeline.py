@@ -4,6 +4,7 @@ Seul module a connaitre l'ordre des operations. Il ne depend que des
 Protocol des moteurs, jamais de leurs implementations concretes.
 """
 
+import logging
 import time
 from dataclasses import dataclass, field, replace
 from pathlib import Path
@@ -17,10 +18,11 @@ from transcription_server.audio import (
     decode_to_pcm,
     duration_seconds,
 )
-from transcription_server.chunking import merge_windows, offset_words, plan_windows
+from transcription_server.chunking import Window, merge_windows, offset_words, plan_windows
 from transcription_server.diarization.engine import DiarizationEngine
 from transcription_server.domain import SpeakerSegment, Turn, Word
 from transcription_server.runtime import empty_cache
+from transcription_server.vad.engine import VadEngine
 
 ChannelMode = Literal["mix", "split"]
 
@@ -29,6 +31,8 @@ ChannelMode = Literal["mix", "split"]
 #: mot a moins de 200 ms d'intervalle ; en revanche la diaphonie entre deux
 #: pistes du meme enregistrement est simultanee a quelques dizaines de ms pres.
 TOLERANCE_DOUBLON_S = 0.2
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass(frozen=True)
@@ -64,9 +68,31 @@ def _transcrire(
     language: str | None,
     chunk_length_s: float,
     chunk_overlap_s: float,
+    vad: VadEngine | None = None,
+    vad_fallback_length_s: float = 5.0,
+    vad_fallback_overlap_s: float = 1.0,
 ) -> list[Word]:
     """Transcrit un signal mono, en le decoupant si besoin."""
-    windows = plan_windows(duration_seconds(pcm), chunk_length_s, chunk_overlap_s)
+    if vad is None:
+        windows = plan_windows(duration_seconds(pcm), chunk_length_s, chunk_overlap_s)
+    else:
+        try:
+            windows = [
+                Window(index=index, start=start, end=end)
+                for index, (start, end) in enumerate(vad.plan(pcm))
+            ]
+        except Exception as exc:  # noqa: BLE001 — repli documente et borne
+            logger.warning(
+                "Le VAD %s a échoué (%s) ; repli sur des fenêtres de %.1f s.",
+                getattr(vad, "name", type(vad).__name__),
+                exc,
+                vad_fallback_length_s,
+            )
+            windows = plan_windows(
+                duration_seconds(pcm),
+                vad_fallback_length_s,
+                vad_fallback_overlap_s,
+            )
     per_window: list[list[Word]] = []
     for window in windows:
         begin = int(window.start * SAMPLE_RATE)
@@ -137,6 +163,9 @@ def run_pipeline(
     chunk_length_s: float,
     chunk_overlap_s: float,
     turn_gap_s: float,
+    vad: VadEngine | None = None,
+    vad_fallback_length_s: float = 5.0,
+    vad_fallback_overlap_s: float = 1.0,
 ) -> TranscriptionResult:
     """Transcrit un fichier et rend des tours de parole."""
     started = time.perf_counter()
@@ -174,7 +203,16 @@ def run_pipeline(
 
     started = time.perf_counter()
     mots_par_canal = [
-        _transcrire(pcm, asr, request.language, chunk_length_s, chunk_overlap_s)
+        _transcrire(
+            pcm,
+            asr,
+            request.language,
+            chunk_length_s,
+            chunk_overlap_s,
+            vad=vad,
+            vad_fallback_length_s=vad_fallback_length_s,
+            vad_fallback_overlap_s=vad_fallback_overlap_s,
+        )
         for pcm in canaux
     ]
     mots_par_canal = _retirer_les_doublons(mots_par_canal)

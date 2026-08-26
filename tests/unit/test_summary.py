@@ -224,6 +224,38 @@ def test_summarize_a_partir_d_un_audio(client_avec_redaction):
     assert "bonjour" in prompt, "la transcription doit atteindre le rédacteur"
 
 
+def test_summarize_audio_utilise_le_plan_vad():
+    longueurs: list[int] = []
+
+    class AsrQuiMesure:
+        name = "asr-qui-mesure"
+
+        def transcribe(self, audio, language):
+            longueurs.append(len(audio))
+            return [Word("bonjour", 0.0, 0.25)]
+
+    class VadUneDemiSeconde:
+        name = "vad-test"
+        device = "cpu"
+
+        def plan(self, audio):
+            return [(0.5, 1.0)]
+
+    app = create_app(
+        settings=Settings(_env_file=None, enable_diarization=False, device="cpu"),
+        asr=AsrQuiMesure(),
+        diarization=StubDiarizationEngine([]),
+        summary=StubSummaryEngine("Compte-rendu."),
+        vad=VadUneDemiSeconde(),
+    )
+    response = TestClient(app).post(
+        "/summarize", files={"file": ("test.wav", _wav_bytes(), "audio/wav")}
+    )
+
+    assert response.status_code == 200
+    assert longueurs == [8000]
+
+
 def test_fournir_les_deux_sources_est_refuse(client_avec_redaction):
     reponse = client_avec_redaction.post(
         "/summarize",

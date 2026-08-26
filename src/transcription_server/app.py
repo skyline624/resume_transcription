@@ -18,6 +18,7 @@ from transcription_server.summary.engine import (
     UnavailableSummaryEngine,
 )
 from transcription_server.state import AppState
+from transcription_server.vad.engine import FixedWindowVadEngine, VadEngine
 
 logger = logging.getLogger(__name__)
 
@@ -37,6 +38,7 @@ def create_app(
     diarization: DiarizationEngine,
     device_info: dict | None = None,
     summary: SummaryEngine | None = None,
+    vad: VadEngine | None = None,
 ) -> FastAPI:
     """Assemble l'application autour de moteurs deja construits.
 
@@ -51,6 +53,7 @@ def create_app(
         asr=asr,
         diarization=diarization,
         summary=summary or UnavailableSummaryEngine(),
+        vad=vad,
         device_info=device_info or {},
     )
 
@@ -121,6 +124,12 @@ def _load_pyannote_engine(
     )
 
 
+def _load_silero_vad_engine(device: str, max_segment_s: float) -> VadEngine:
+    from transcription_server.vad.silero import load_silero_vad_engine
+
+    return load_silero_vad_engine(device=device, max_segment_s=max_segment_s)
+
+
 def build_app(settings: Settings | None = None) -> FastAPI:
     """Construit l'application avec les vrais moteurs charges sur le GPU.
 
@@ -136,6 +145,11 @@ def build_app(settings: Settings | None = None) -> FastAPI:
 
     settings = settings or get_settings()
     device = resolve_device(settings.device, cuda_available())
+    vad_device = (
+        resolve_device(settings.vad_device, cuda_available())
+        if settings.enable_vad
+        else settings.vad_device
+    )
 
     logger.info("Chargement des moteurs sur %s…", device)
     asr = _load_nemo_engine(
@@ -143,6 +157,23 @@ def build_app(settings: Settings | None = None) -> FastAPI:
         device=device,
         compute_type=settings.compute_type,
     )
+
+    vad = None
+    if settings.enable_vad:
+        try:
+            vad = _load_silero_vad_engine(
+                device=vad_device,
+                max_segment_s=settings.vad_max_segment_s,
+            )
+        except Exception:
+            logger.exception(
+                "Silero VAD indisponible ; repli sur des fenêtres fixes de %.1f s.",
+                settings.vad_max_segment_s,
+            )
+            vad = FixedWindowVadEngine(
+                max_segment_s=settings.vad_max_segment_s,
+                overlap_s=settings.vad_fallback_overlap_s,
+            )
 
     if settings.enable_diarization:
         diarization = _load_pyannote_engine(
@@ -178,6 +209,7 @@ def build_app(settings: Settings | None = None) -> FastAPI:
         asr=asr,
         diarization=diarization,
         summary=summary,
+        vad=vad,
         device_info=gpu_info(),
     )
 

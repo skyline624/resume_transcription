@@ -91,6 +91,9 @@ async def health(state: Annotated[AppState, Depends(get_state)]) -> HealthOut:
         asr_model=state.asr.name,
         diarization_model=state.diarization.name,
         diarization_enabled=state.settings.enable_diarization,
+        vad_model=state.vad.name if state.vad is not None else "none",
+        vad_device=state.vad.device if state.vad is not None else None,
+        vad_enabled=state.settings.enable_vad,
         summary_model=state.summary.name,
         summary_enabled=state.settings.enable_summary,
         gpu=state.device_info or None,
@@ -159,6 +162,9 @@ async def transcribe(
                 chunk_length_s=settings.chunk_length_s,
                 chunk_overlap_s=settings.chunk_overlap_s,
                 turn_gap_s=settings.turn_gap_s,
+                vad=state.vad,
+                vad_fallback_length_s=settings.vad_max_segment_s,
+                vad_fallback_overlap_s=settings.vad_fallback_overlap_s,
             )
     except AudioDecodeError as exc:
         # str(exc) porte le chemin du fichier temporaire et le stderr brut de

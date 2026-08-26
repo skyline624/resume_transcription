@@ -6,25 +6,46 @@ permet aux tests de conformite de signature de tourner sur Windows.
 """
 
 import logging
+import re
 import tempfile
 import wave
+from collections.abc import Callable
+from contextlib import AbstractContextManager, contextmanager, nullcontext
 from pathlib import Path
 
 import numpy as np
 
 from transcription_server.audio import SAMPLE_RATE
+from transcription_server.chunking import offset_words
 from transcription_server.domain import Word
 
 logger = logging.getLogger(__name__)
+
+_RETRY_SEGMENT_S = 3.0
+_MOTS_ANGLAIS = set(
+    "the and because you that with this what your they their it is are was were "
+    "for but from have has had will would should could in of to".split()
+)
+_MOTS_FRANCAIS = set(
+    "le la les un une des du de et que qui dans pour avec ce cette ces est sont "
+    "tu vous il elle on nous mais pas plus au aux en ça donc parce".split()
+)
 
 
 class NemoParakeetEngine:
     """Transcrit avec un modele NeMo ASR, timestamps mot a mot inclus."""
 
-    def __init__(self, model, model_name: str, device: str) -> None:
+    def __init__(
+        self,
+        model,
+        model_name: str,
+        device: str,
+        precision_context: Callable[[], AbstractContextManager] = nullcontext,
+    ) -> None:
         self._model = model
         self._name = model_name
         self._device = device
+        self._precision_context = precision_context
 
     @property
     def name(self) -> str:
@@ -33,13 +54,32 @@ class NemoParakeetEngine:
     def transcribe(self, audio: np.ndarray, language: str | None) -> list[Word]:
         """Rend les mots horodates, en temps relatif au debut de `audio`.
 
-        `language` est accepte pour respecter le contrat du Protocol, mais
-        Parakeet TDT v3 detecte la langue lui-meme et n'expose pas de parametre
-        pour la forcer : la valeur est donc ignoree. L'appelant la recupere
-        telle quelle dans la reponse, ce qui est documente comme une limite.
+        Parakeet TDT v3 détecte la langue lui-même et ne permet pas de la
+        forcer. Quand `fr` est explicitement demandé, la valeur sert toutefois
+        de garde-fou : une sortie nettement anglaise est retentée sur des
+        sous-segments plus courts.
         """
         if audio.size == 0:
             return []
+
+        mots = self._transcribe_once(audio)
+        texte = " ".join(mot.text for mot in mots)
+        francais_demande = bool(language and language.lower().split("-", 1)[0] == "fr")
+        taille_retry = int(_RETRY_SEGMENT_S * SAMPLE_RATE)
+        if francais_demande and _semble_anglais(texte) and audio.size > taille_retry:
+            logger.info(
+                "Sortie probablement anglaise malgré language=fr ; "
+                "nouvelle inférence par segments de %.1f s.",
+                _RETRY_SEGMENT_S,
+            )
+            mots = []
+            for debut in range(0, audio.size, taille_retry):
+                locaux = self._transcribe_once(audio[debut : debut + taille_retry])
+                mots.extend(offset_words(locaux, debut / SAMPLE_RATE))
+        return mots
+
+    def _transcribe_once(self, audio: np.ndarray) -> list[Word]:
+        """Exécute une inférence NeMo sans logique de seconde passe."""
 
         # NeMo lit un chemin de fichier de maniere fiable quelle que soit sa
         # version ; passer un tableau change de signature d'une release a
@@ -48,13 +88,22 @@ class NemoParakeetEngine:
             chemin = Path(handle.name)
         try:
             _write_wav(chemin, audio)
-            sorties = self._model.transcribe([str(chemin)], timestamps=True)
+            with self._precision_context():
+                sorties = self._model.transcribe([str(chemin)], timestamps=True)
         finally:
             chemin.unlink(missing_ok=True)
 
         if not sorties:
             return []
         return _extract_words(sorties[0])
+
+
+def _semble_anglais(phrase: str) -> bool:
+    """Repère une sortie nettement anglaise, sans classer les mots métier."""
+    mots = re.findall(r"[a-zà-ÿ']+", phrase.lower())
+    anglais = sum(mot in _MOTS_ANGLAIS for mot in mots)
+    francais = sum(mot in _MOTS_FRANCAIS for mot in mots)
+    return anglais >= 2 and anglais > francais
 
 
 def _write_wav(path: Path, audio: np.ndarray, rate: int = SAMPLE_RATE) -> None:
@@ -117,8 +166,21 @@ def load_nemo_engine(
     logger.info("Chargement du modèle ASR %s…", model_name)
     model = nemo_asr.models.ASRModel.from_pretrained(model_name=model_name)
     model = model.to(torch.device(device))
-    if device == "cuda" and compute_type == "float16":
-        model = model.half()
     model.eval()
+
+    @contextmanager
+    def precision_context():
+        with torch.inference_mode():
+            if device == "cuda" and compute_type == "float16":
+                with torch.autocast(device_type="cuda", dtype=torch.float16):
+                    yield
+            else:
+                yield
+
     logger.info("Modèle ASR %s chargé sur %s.", model_name, device)
-    return NemoParakeetEngine(model=model, model_name=model_name, device=device)
+    return NemoParakeetEngine(
+        model=model,
+        model_name=model_name,
+        device=device,
+        precision_context=precision_context,
+    )

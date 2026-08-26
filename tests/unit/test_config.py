@@ -20,6 +20,10 @@ def test_defauts_conformes_a_la_spec():
     assert s.compute_type == "float16"
     assert s.chunk_length_s == 480.0
     assert s.chunk_overlap_s == 15.0
+    assert s.enable_vad is True
+    assert s.vad_device == "cpu"
+    assert s.vad_max_segment_s == 5.0
+    assert s.vad_fallback_overlap_s == 1.0
     assert s.turn_gap_s == 1.0
     assert s.host == "0.0.0.0"
     assert s.port == 8000
@@ -39,6 +43,21 @@ def test_device_invalide_est_rejete():
 def test_compute_type_invalide_est_rejete():
     with pytest.raises(ValidationError):
         Settings(_env_file=None, hf_token=TOKEN, compute_type="int4")
+
+
+def test_vad_device_invalide_est_rejete():
+    with pytest.raises(ValidationError):
+        Settings(_env_file=None, hf_token=TOKEN, vad_device="tpu")
+
+
+def test_recouvrement_de_repli_vad_doit_rester_inferieur_au_segment():
+    with pytest.raises(ValidationError):
+        Settings(
+            _env_file=None,
+            hf_token=TOKEN,
+            vad_max_segment_s=10.0,
+            vad_fallback_overlap_s=10.0,
+        )
 
 
 def test_recouvrement_superieur_au_chunk_est_rejete():

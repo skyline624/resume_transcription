@@ -31,6 +31,10 @@ class Settings(BaseSettings):
 
     chunk_length_s: float = Field(default=480.0, gt=0)
     chunk_overlap_s: float = Field(default=15.0, ge=0)
+    enable_vad: bool = True
+    vad_device: Literal["cpu", "cuda"] = "cpu"
+    vad_max_segment_s: float = Field(default=5.0, gt=0)
+    vad_fallback_overlap_s: float = Field(default=1.0, ge=0)
     turn_gap_s: float = Field(default=1.0, ge=0)
 
     # --- Compte-rendu ---
@@ -61,6 +65,11 @@ class Settings(BaseSettings):
         if self.chunk_overlap_s >= self.chunk_length_s:
             raise ValueError(
                 "CHUNK_OVERLAP_S doit être strictement inférieur à CHUNK_LENGTH_S."
+            )
+        if self.vad_fallback_overlap_s >= self.vad_max_segment_s:
+            raise ValueError(
+                "VAD_FALLBACK_OVERLAP_S doit être strictement inférieur à "
+                "VAD_MAX_SEGMENT_S."
             )
         if self.enable_diarization and not self.hf_token:
             raise ValueError(

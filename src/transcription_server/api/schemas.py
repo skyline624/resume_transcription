@@ -41,6 +41,9 @@ class HealthOut(BaseModel):
     asr_model: str
     diarization_model: str
     diarization_enabled: bool
+    vad_model: str
+    vad_device: str | None
+    vad_enabled: bool
     summary_model: str
     summary_enabled: bool
     # dict nu vaudrait dict[Any, Any] : une cle non serialisable y passerait la

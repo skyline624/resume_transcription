@@ -8,11 +8,17 @@ Python ordinaire. Les tests d'inference reelle vivent dans `tests/gpu/`.
 
 import sys
 import types
+import wave
+from contextlib import contextmanager
 
 import numpy as np
 import pytest
 
-from transcription_server.asr.nemo_parakeet import NemoParakeetEngine, _extract_words
+from transcription_server.asr.nemo_parakeet import (
+    NemoParakeetEngine,
+    _extract_words,
+    load_nemo_engine,
+)
 from transcription_server.diarization.pyannote_engine import PyannoteEngine
 from transcription_server.domain import SpeakerSegment
 
@@ -110,6 +116,141 @@ def test_transcribe_sur_audio_vide_ne_touche_pas_au_modele():
 
     moteur = NemoParakeetEngine(ModeleQuiRefuse(), "nvidia/parakeet", "cpu")
     assert moteur.transcribe(np.array([], dtype=np.float32), language=None) == []
+
+
+def test_transcribe_execute_nemo_dans_le_contexte_de_precision():
+    etat = {"actif": False}
+
+    @contextmanager
+    def precision_fp16():
+        etat["actif"] = True
+        try:
+            yield
+        finally:
+            etat["actif"] = False
+
+    class ModeleQuiVerifieLaPrecision:
+        def transcribe(self, fichiers, timestamps):
+            assert etat["actif"], "NeMo doit s'exécuter sous autocast FP16"
+            return [
+                _HypotheseNeMo(
+                    [{"word": "bonjour", "start": 0.0, "end": 0.5}]
+                )
+            ]
+
+    moteur = NemoParakeetEngine(
+        ModeleQuiVerifieLaPrecision(),
+        "nvidia/parakeet",
+        "cuda",
+        precision_context=precision_fp16,
+    )
+
+    audio = np.zeros(16000, dtype=np.float32)
+    assert moteur.transcribe(audio, language=None)[0].text == "bonjour"
+    assert etat["actif"] is False
+
+
+def test_loader_fp16_conserve_les_poids_et_utilise_autocast(monkeypatch):
+    etat = {"autocast": False}
+
+    @contextmanager
+    def faux_autocast(*args, **kwargs):
+        etat["autocast"] = True
+        try:
+            yield
+        finally:
+            etat["autocast"] = False
+
+    @contextmanager
+    def faux_inference_mode():
+        yield
+
+    class FauxModele:
+        def to(self, device):
+            return self
+
+        def half(self):
+            raise AssertionError("les poids ne doivent pas être castés définitivement")
+
+        def eval(self):
+            return self
+
+        def transcribe(self, fichiers, timestamps):
+            assert etat["autocast"] is True
+            return [
+                _HypotheseNeMo(
+                    [{"word": "bonjour", "start": 0.0, "end": 0.5}]
+                )
+            ]
+
+    faux_modele = FauxModele()
+    module_asr = types.ModuleType("nemo.collections.asr")
+    module_asr.models = types.SimpleNamespace(
+        ASRModel=types.SimpleNamespace(
+            from_pretrained=lambda model_name: faux_modele
+        )
+    )
+    module_collections = types.ModuleType("nemo.collections")
+    module_collections.asr = module_asr
+    module_nemo = types.ModuleType("nemo")
+    module_nemo.collections = module_collections
+    monkeypatch.setitem(sys.modules, "nemo", module_nemo)
+    monkeypatch.setitem(sys.modules, "nemo.collections", module_collections)
+    monkeypatch.setitem(sys.modules, "nemo.collections.asr", module_asr)
+
+    module_torch = types.ModuleType("torch")
+    module_torch.device = lambda device: device
+    module_torch.float16 = object()
+    module_torch.autocast = faux_autocast
+    module_torch.inference_mode = faux_inference_mode
+    monkeypatch.setitem(sys.modules, "torch", module_torch)
+
+    moteur = load_nemo_engine(
+        model_name="nvidia/parakeet",
+        device="cuda",
+        compute_type="float16",
+    )
+
+    audio = np.zeros(16000, dtype=np.float32)
+    assert moteur.transcribe(audio, language=None)[0].text == "bonjour"
+
+
+def test_sortie_anglaise_est_redecoupee_quand_le_francais_est_demande():
+    appels = 0
+
+    class ModeleQuiChangeDeLangueSur_5s:
+        def transcribe(self, fichiers, timestamps):
+            nonlocal appels
+            appels += 1
+            with wave.open(fichiers[0], "rb") as handle:
+                duree = handle.getnframes() / handle.getframerate()
+
+            if duree > 3.0:
+                return [
+                    _HypotheseNeMo(
+                        [
+                            {
+                                "word": "The car is expensive and I pay per month",
+                                "start": 0.0,
+                                "end": 4.5,
+                            }
+                        ]
+                    )
+                ]
+            mot = "bonjour" if appels == 2 else "monde"
+            return [
+                _HypotheseNeMo([{"word": mot, "start": 0.0, "end": 0.5}])
+            ]
+
+    moteur = NemoParakeetEngine(
+        ModeleQuiChangeDeLangueSur_5s(), "nvidia/parakeet", "cuda"
+    )
+
+    mots = moteur.transcribe(np.zeros(5 * 16000, dtype=np.float32), language="fr")
+
+    assert [mot.text for mot in mots] == ["bonjour", "monde"]
+    assert [mot.start for mot in mots] == [0.0, 3.0]
+    assert appels == 3
 
 
 # --- Diarization pyannote -----------------------------------------------------

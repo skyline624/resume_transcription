@@ -142,6 +142,38 @@ def test_la_langue_est_transmise_au_moteur():
     assert recu == ["fr"]
 
 
+def test_la_route_openai_utilise_le_plan_vad():
+    longueurs: list[int] = []
+
+    class AsrQuiMesure:
+        name = "asr-qui-mesure"
+
+        def transcribe(self, audio, language):
+            longueurs.append(len(audio))
+            return [Word("bonjour", 0.0, 0.25)]
+
+    class VadUneDemiSeconde:
+        name = "vad-test"
+        device = "cpu"
+
+        def plan(self, audio):
+            return [(0.5, 1.0)]
+
+    app = create_app(
+        settings=Settings(_env_file=None, enable_diarization=False, device="cpu"),
+        asr=AsrQuiMesure(),
+        diarization=StubDiarizationEngine([]),
+        vad=VadUneDemiSeconde(),
+    )
+    response = TestClient(app).post(
+        "/v1/audio/transcriptions",
+        files={"file": ("test.wav", _wav_bytes(), "audio/wav")},
+    )
+
+    assert response.status_code == 200
+    assert longueurs == [8000]
+
+
 def test_la_diarization_n_est_jamais_appelee():
     """L'endpoint OpenAI n'expose pas la diarization : le moteur ne doit pas
     etre sollicite, meme si le serveur en a un."""

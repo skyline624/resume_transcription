@@ -160,7 +160,7 @@ MOTS_PAR_DEFAUT = [Word("bonjour", 0.0, 0.5), Word("merci", 1.2, 1.6)]
 SEGMENTS_PAR_DEFAUT = [SpeakerSegment(S0, 0.0, 1.0), SpeakerSegment(S1, 1.1, 2.0)]
 
 
-def _creer_app(asr=None, diarization=None, settings=None, device_info=None):
+def _creer_app(asr=None, diarization=None, settings=None, device_info=None, vad=None):
     """Application de test, moteurs bouchonnes, diarization desactivee."""
     return create_app(
         settings=settings
@@ -170,6 +170,7 @@ def _creer_app(asr=None, diarization=None, settings=None, device_info=None):
         if diarization is not None
         else StubDiarizationEngine(list(SEGMENTS_PAR_DEFAUT)),
         device_info=device_info,
+        vad=vad,
     )
 
 
@@ -186,6 +187,30 @@ def _wav_de_frames(frames: int, rate: int = 16000) -> bytes:
         f.setframerate(rate)
         f.writeframes(struct.pack("<h", 0) * frames)
     return buffer.getvalue()
+
+
+def test_la_route_native_utilise_le_plan_vad():
+    longueurs: list[int] = []
+
+    class AsrQuiMesure:
+        name = "asr-qui-mesure"
+
+        def transcribe(self, audio, language):
+            longueurs.append(len(audio))
+            return [Word("bonjour", 0.0, 0.25)]
+
+    class VadUneDemiSeconde:
+        name = "vad-test"
+        device = "cpu"
+
+        def plan(self, audio):
+            return [(0.5, 1.0)]
+
+    client = TestClient(_creer_app(asr=AsrQuiMesure(), vad=VadUneDemiSeconde()))
+    response = client.post("/transcribe", files=_fichier())
+
+    assert response.status_code == 200
+    assert longueurs == [8000]
 
 
 def _parametres_avec_diarization() -> Settings:

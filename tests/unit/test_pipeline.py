@@ -36,6 +36,84 @@ def short_wav(tmp_path):
     return path
 
 
+def test_vad_limite_chaque_inference_et_preserve_les_offsets(short_wav):
+    """Une regression vers la fenetre globale rappellerait l'ASR une seule fois
+    et remettrait tous les mots au debut de l'enregistrement.
+    """
+    appels = []
+
+    class VadDeuxPassages:
+        name = "deux-passages"
+
+        def plan(self, audio):
+            return [
+                # Fenetres disjointes : le silence intermediaire n'est pas
+                # envoye au modele, comme avec Silero.
+                (0.5, 1.0),
+                (2.0, 2.5),
+            ]
+
+    class AsrLocal:
+        name = "local"
+
+        def transcribe(self, audio, language):
+            appels.append(len(audio))
+            return [Word(f"mot{len(appels)}", 0.0, 0.1)]
+
+    result = run_pipeline(
+        path=short_wav,
+        asr=AsrLocal(),
+        diarization=NullDiarizationEngine(),
+        vad=VadDeuxPassages(),
+        request=TranscriptionRequest(diarize=False),
+        chunk_length_s=480.0,
+        chunk_overlap_s=15.0,
+        turn_gap_s=1.0,
+    )
+
+    assert appels == [8000, 8000]
+    mots = [mot for tour in result.turns for mot in tour.words]
+    assert [(mot.text, mot.start) for mot in mots] == [
+        ("mot1", pytest.approx(0.5)),
+        ("mot2", pytest.approx(2.0)),
+    ]
+
+
+def test_echec_du_vad_retombe_sur_des_fenetres_courtes(short_wav):
+    """Une panne du VAD ne doit jamais restaurer la fenetre de huit minutes
+    qui a provoque la mauvaise detection de langue.
+    """
+    appels = []
+
+    class VadQuiExplose:
+        name = "explose"
+
+        def plan(self, audio):
+            raise RuntimeError("modele VAD indisponible")
+
+    class AsrQuiCompte:
+        name = "compte"
+
+        def transcribe(self, audio, language):
+            appels.append(len(audio))
+            return []
+
+    run_pipeline(
+        path=short_wav,
+        asr=AsrQuiCompte(),
+        diarization=NullDiarizationEngine(),
+        vad=VadQuiExplose(),
+        vad_fallback_length_s=1.0,
+        vad_fallback_overlap_s=0.2,
+        request=TranscriptionRequest(diarize=False),
+        chunk_length_s=480.0,
+        chunk_overlap_s=15.0,
+        turn_gap_s=1.0,
+    )
+
+    assert appels == [16000, 16000, 16000, 9600]
+
+
 def test_pipeline_produit_du_texte(short_wav):
     asr = StubAsrEngine([Word("bonjour", 0.0, 0.5), Word("tous", 0.6, 1.0)])
     result = run_pipeline(

@@ -54,7 +54,10 @@ COPY tests/ ./tests/
 EXPOSE 8000
 
 COPY docker/entrypoint.sh /usr/local/bin/entrypoint.sh
-RUN chmod +x /usr/local/bin/entrypoint.sh
+# Docker Desktop peut fournir le contexte depuis un checkout Windows en CRLF.
+# Normaliser dans l'image évite un shebang interprété comme `bash\r`.
+RUN sed -i 's/\r$//' /usr/local/bin/entrypoint.sh \
+    && chmod +x /usr/local/bin/entrypoint.sh
 ENTRYPOINT ["/usr/local/bin/entrypoint.sh"]
 # Indispensable : l'entrypoint fait `exec "$@"` sous `set -u`, donc un
 # `docker run` sans commande echouerait sur une variable non liee.

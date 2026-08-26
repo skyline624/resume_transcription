@@ -102,10 +102,10 @@ curl.exe -s -F "file=@reunion.mp3" -F "diarize=true" `
 
 `num_speakers` fixe un nombre exact et s'exclut de `min_speakers`/`max_speakers`.
 
-> **`language` est accepté mais sans effet.** Parakeet v3 détecte la langue
-> lui-même et n'expose aucun moyen de la forcer — mesuré : la transcription est
-> identique avec et sans. Le champ existe pour la compatibilité OpenAI, et il
-> est simplement renvoyé tel quel dans la réponse.
+> Parakeet v3 détecte la langue lui-même et n'expose aucun moyen de la forcer.
+> `language=fr` active néanmoins un garde-fou local : si une fenêtre de 5 s
+> produit une sortie nettement anglaise, elle est retentée par sous-segments de
+> 3 s. Les autres langues conservent l'auto-détection native du modèle.
 
 ### Enregistrements multi-pistes : `channels=split`
 
@@ -206,8 +206,12 @@ un message actionnable — et la transcription, elle, continue de fonctionner.
 | `ENABLE_DIARIZATION` | `true` | `false` permet de démarrer sans token |
 | `DEVICE` | `cuda` | `cuda` ou `cpu` |
 | `COMPUTE_TYPE` | `float16` | `float16` ou `float32` |
-| `CHUNK_LENGTH_S` | `480` | Longueur des fenêtres d'inférence |
-| `CHUNK_OVERLAP_S` | `15` | Recouvrement entre fenêtres |
+| `ENABLE_VAD` | `true` | Active la détection de parole Silero avant Parakeet |
+| `VAD_DEVICE` | `cpu` | `cpu` recommandé ; `cuda` reste disponible |
+| `VAD_MAX_SEGMENT_S` | `5` | Durée maximale envoyée à Parakeet par passage parlé |
+| `VAD_FALLBACK_OVERLAP_S` | `1` | Recouvrement des fenêtres fixes si Silero échoue |
+| `CHUNK_LENGTH_S` | `480` | Longueur des fenêtres si le VAD est désactivé |
+| `CHUNK_OVERLAP_S` | `15` | Recouvrement si le VAD est désactivé |
 | `TURN_GAP_S` | `1.0` | Silence déclenchant un nouveau tour de parole |
 | `HOST` / `PORT` | `0.0.0.0` / `8000` | Écoute **dans** le conteneur |
 | `MAX_UPLOAD_MB` | `1024` | Taille maximale acceptée |
@@ -266,12 +270,13 @@ rendre une liste de locuteurs vide, qui vous ferait croire à un enregistrement
 mono-locuteur.
 
 **Mémoire GPU insuffisante sur un fichier long.**
-Baissez `CHUNK_LENGTH_S` — la valeur par défaut de 480 s est calibrée pour
-24 Go. Sachez cependant que **c'est la diarization qui domine, pas la
-transcription** : elle traite le fichier d'un seul tenant, sans découpage. Sur
-110 minutes elle occupe environ 12 Go et représente 83 % du temps de
-traitement. Si la mémoire manque, `ENABLE_DIARIZATION=false` libère bien plus
-que n'importe quel réglage de fenêtre.
+Baissez `VAD_MAX_SEGMENT_S`. Si le VAD est désactivé, baissez plutôt
+`CHUNK_LENGTH_S` — sa valeur par défaut de 480 s est calibrée pour 24 Go.
+Sachez cependant que **c'est la diarization qui domine, pas la transcription** :
+elle traite le fichier d'un seul tenant, sans découpage. Sur 110 minutes elle
+occupe environ 12 Go et représente 83 % du temps de traitement. Si la mémoire
+manque, `ENABLE_DIARIZATION=false` libère bien plus que n'importe quel réglage
+de fenêtre.
 
 **Trop de locuteurs détectés.**
 Sur une réunion de 110 minutes à 6-7 personnes, pyannote en a rapporté 11 : il

@@ -25,8 +25,8 @@ TOKEN = "hf_pour_les_tests"
 
 @pytest.fixture
 def moteurs_simules(monkeypatch):
-    """Remplace les deux fabriques et enregistre leurs arguments."""
-    appels = {"asr": [], "diarization": []}
+    """Remplace les fabriques de modèles et enregistre leurs arguments."""
+    appels = {"asr": [], "diarization": [], "vad": []}
 
     def faux_load_nemo(model_name, device, compute_type):
         appels["asr"].append(
@@ -38,8 +38,26 @@ def moteurs_simules(monkeypatch):
         appels["diarization"].append({"model_name": model_name, "device": device})
         return StubDiarizationEngine([], name=model_name)
 
+    class FauxVad:
+        name = "silero-vad"
+
+        def __init__(self, device):
+            self.device = device
+
+        def plan(self, audio):
+            return [(0.0, len(audio) / 16000)]
+
+    def faux_load_vad(device, max_segment_s):
+        appels["vad"].append(
+            {"device": device, "max_segment_s": max_segment_s}
+        )
+        return FauxVad(device)
+
     monkeypatch.setattr(app_module, "_load_nemo_engine", faux_load_nemo)
     monkeypatch.setattr(app_module, "_load_pyannote_engine", faux_load_pyannote)
+    monkeypatch.setattr(
+        app_module, "_load_silero_vad_engine", faux_load_vad, raising=False
+    )
     return appels
 
 
@@ -92,6 +110,38 @@ def test_diarization_activee_charge_pyannote(monkeypatch, moteurs_simules):
         TestClient(application).get("/health").json()["diarization_model"]
         == reglages.diarization_model
     )
+
+
+def test_vad_est_charge_sur_cpu_par_defaut(monkeypatch, moteurs_simules):
+    monkeypatch.setattr(app_module, "cuda_available", lambda: True)
+    application = app_module.build_app(
+        Settings(_env_file=None, enable_diarization=False, device="cuda")
+    )
+
+    assert moteurs_simules["vad"] == [
+        {"device": "cpu", "max_segment_s": 5.0}
+    ]
+    corps = TestClient(application).get("/health").json()
+    assert corps["vad_model"] == "silero-vad"
+    assert corps["vad_device"] == "cpu"
+
+
+def test_echec_du_chargement_silero_garde_des_fenetres_courtes(
+    monkeypatch, moteurs_simules
+):
+    monkeypatch.setattr(app_module, "cuda_available", lambda: False)
+
+    def chargement_en_echec(**kwargs):
+        raise RuntimeError("silero indisponible")
+
+    monkeypatch.setattr(app_module, "_load_silero_vad_engine", chargement_en_echec)
+    application = app_module.build_app(
+        Settings(_env_file=None, enable_diarization=False, device="cpu")
+    )
+
+    corps = TestClient(application).get("/health").json()
+    assert corps["vad_model"] == "fixed-windows"
+    assert corps["vad_enabled"] is True
 
 
 def test_les_reglages_sont_transmis_aux_fabriques(monkeypatch, moteurs_simules):

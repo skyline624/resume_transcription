@@ -16,6 +16,7 @@ dependencies = [
 gpu = [
     "nemo_toolkit[asr]==3.0.0",
     "pyannote.audio>=4.0,<5.0",
+    "silero-vad>=6.1,<7.0",
 ]
 dev = [
     "pytest>=8.3",

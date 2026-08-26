@@ -9,6 +9,7 @@ from transcription_server.asr.engine import AsrEngine
 from transcription_server.config import Settings
 from transcription_server.diarization.engine import DiarizationEngine
 from transcription_server.summary.engine import SummaryEngine
+from transcription_server.vad.engine import VadEngine
 
 
 @dataclass
@@ -17,6 +18,7 @@ class AppState:
     asr: AsrEngine
     diarization: DiarizationEngine
     summary: SummaryEngine
+    vad: VadEngine | None = None
     device_info: dict = field(default_factory=dict)
 
     # Un seul travail sur le GPU a la fois : deux inferences concurrentes se
