@@ -42,6 +42,7 @@ markers = [
 ]
 addopts = "-m 'not gpu'"
 asyncio_mode = "auto"
+pythonpath = ["src", "qwen_worker/src"]
 # L'exigence de sortie immaculee cesse d'etre une convention : tout
 # avertissement devient un echec. Un filtre d'exception se justifie sur un
 # message precis, jamais sur une classe entiere -- ce dernier avalerait aussi
