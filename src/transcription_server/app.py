@@ -5,7 +5,13 @@ import logging
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import JSONResponse
 
-from transcription_server.api import native_routes, openai_routes, summary_routes, tts_routes
+from transcription_server.api import (
+    native_routes,
+    openai_routes,
+    summary_routes,
+    tts_routes,
+    voice_routes,
+)
 from transcription_server.asr.engine import AsrEngine
 from transcription_server.config import Settings
 from transcription_server.diarization.engine import (
@@ -114,6 +120,7 @@ def create_app(
     app.include_router(openai_routes.router)
     app.include_router(summary_routes.router)
     app.include_router(tts_routes.router)
+    app.include_router(voice_routes.router)
     return app
 
 
