@@ -72,7 +72,7 @@ export class HttpClient {
     } else {
       headers.set("content-type", "application/json");
     }
-    const response = await this.fetcher(this.url(path), {
+    const response = await this.fetcher.call(globalThis, this.url(path), {
       ...init,
       method: "POST",
       headers,
@@ -90,12 +90,15 @@ export class HttpClient {
   }
 
   async delete(path: string, init?: RequestInit): Promise<void> {
-    const response = await this.fetcher(this.url(path), { ...init, method: "DELETE" });
+    const response = await this.fetcher.call(globalThis, this.url(path), {
+      ...init,
+      method: "DELETE",
+    });
     await ensureSuccess(response);
   }
 
   private async requestJson<T>(path: string, init: RequestInit): Promise<T> {
-    const response = await this.fetcher(this.url(path), init);
+    const response = await this.fetcher.call(globalThis, this.url(path), init);
     await ensureSuccess(response);
     return (await response.json()) as T;
   }

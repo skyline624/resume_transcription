@@ -7,6 +7,21 @@ function response(body: BodyInit | null, init: ResponseInit): Response {
 }
 
 describe("HttpClient", () => {
+  it("invokes fetch with the browser global as its receiver", async () => {
+    const receiverAwareFetch = function (this: unknown): Promise<Response> {
+      if (this !== globalThis) throw new TypeError("Illegal invocation");
+      return Promise.resolve(
+        response(JSON.stringify({ text: "bonjour" }), {
+          status: 200,
+          headers: { "content-type": "application/json" },
+        }),
+      );
+    } as typeof fetch;
+    const client = new HttpClient("", receiverAwareFetch);
+
+    await expect(client.getJson("/health")).resolves.toEqual({ text: "bonjour" });
+  });
+
   it("normalizes an OpenAI error envelope", async () => {
     const fetcher = vi.fn<typeof fetch>().mockResolvedValue(
       response(
