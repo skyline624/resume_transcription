@@ -24,7 +24,7 @@ corpus (`dates-01.wav`, par exemple). Le script :
 
 1. décharge Qwen avant la mesure à froid ;
 2. génère une seconde fois pour la latence à chaud ;
-3. mesure durée, RTF et variation de VRAM ;
+3. mesure durée, RTF et VRAM active directement dans le processus Qwen ;
 4. retranscrit chaque sortie avec `/v1/audio/transcriptions` ;
 5. applique la même normalisation et le même WER aux deux moteurs ;
 6. écrit `results.csv` et `results.json` avec le commit et les paramètres.
@@ -65,3 +65,24 @@ masquer les nombres, les noms propres ou le texte long.
 Les mesures RTX 3090 produites pendant la validation sont conservées avec les
 artefacts `results.csv` et `results.json`. Les notes d'écoute exigent plusieurs
 évaluateurs humains et ne sont donc pas fabriquées par le script.
+
+## Résultats préliminaires RTX 3090
+
+Un smoke test de trois entrées sur le commit `01af698` a produit les moyennes
+suivantes : démarrage à froid 92,92 s, génération à chaud 62,04 s, RTF 4,33 et
+WER 43,1 %. Le détail du WER était 15,8 % pour les nombres, 13,6 % pour les
+dates et 100 % pour les devises. La mesure VRAM de ce premier passage était
+invalide, car elle était effectuée depuis le processus API au lieu du processus
+Qwen.
+
+Après correction, le commit `40aadd6` a été vérifié sur l'entrée `nombres-01` :
+
+| Froid | Chaud | Durée audio | RTF chaud | VRAM Qwen active | WER |
+|---:|---:|---:|---:|---:|---:|
+| 102,54 s | 37,79 s | 7,95 s | 4,75 | 3 990 MiB | 36,8 % |
+
+Le WER brut pénalise notamment l'équivalence entre « mille deux cent
+quarante-sept » et `1247`, mais la sortie « devises » du premier smoke test
+était aussi réellement dégradée. Le seuil de 8 % n'est donc pas atteint. Aucun
+export VoxMind comparable et aucune écoute A/B humaine n'étaient disponibles :
+ces résultats ne permettent pas encore de déclarer Qwen supérieur à VoxMind.

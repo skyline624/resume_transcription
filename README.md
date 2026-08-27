@@ -128,7 +128,7 @@ requête. Aucun texte synthétisé ni chemin de référence n'est journalisé.
 
 `GET /health` expose l'état `idle`, `loading`, `ready`, `generating` ou
 `error`, les checkpoints téléchargés, le checkpoint chargé, `bfloat16`, CUDA,
-SDPA et le PID du worker. Une panne, un délai ou un manque de VRAM renvoie 503
+SDPA, le PID et la VRAM active du worker. Une panne, un délai ou un manque de VRAM renvoie 503
 avec un code stable ; il n'existe aucun repli CPU silencieux.
 
 ### Transcription simple
