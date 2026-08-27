@@ -1,12 +1,14 @@
 import json
 from pathlib import Path
 
+import httpx
 import pytest
 
 from scripts.benchmark_tts import (
     current_commit,
     load_corpus,
     normalize_text,
+    worker_vram_mib,
     word_error_rate,
 )
 
@@ -59,3 +61,13 @@ def test_commit_explicite_n_exige_pas_de_depot_git(monkeypatch):
 
     monkeypatch.setattr("scripts.benchmark_tts.subprocess.run", forbidden)
     assert current_commit("abc123") == "abc123"
+
+
+def test_vram_provient_du_processus_worker_via_health():
+    transport = httpx.MockTransport(
+        lambda request: httpx.Response(
+            200, json={"tts": {"vram_allocated_mib": 4321.5}}
+        )
+    )
+    with httpx.Client(base_url="http://test", transport=transport) as client:
+        assert worker_vram_mib(client) == 4321.5

@@ -98,6 +98,7 @@ def test_health_expose_l_etat_complet_du_worker():
             speakers=("Ryan",),
             features=("custom_voice", "clone"),
             pid=42,
+            vram_allocated_mib=4321.5,
         )
 
     tts.health = detailed_health
@@ -119,6 +120,7 @@ def test_health_expose_l_etat_complet_du_worker():
         "features": ["custom_voice", "clone"],
         "last_error": None,
         "pid": 42,
+        "vram_allocated_mib": 4321.5,
     }
 
 

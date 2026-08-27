@@ -130,6 +130,7 @@ class UnixTtsClient:
                 features=tuple(payload.get("features", ())),
                 last_error=payload.get("last_error"),
                 pid=payload.get("pid"),
+                vram_allocated_mib=payload.get("vram_allocated_mib"),
             )
         except (KeyError, TypeError, ValueError, json.JSONDecodeError) as exc:
             raise TtsUnavailableError(

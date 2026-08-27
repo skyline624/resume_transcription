@@ -133,3 +133,18 @@ async def test_unload_est_idempotent_quand_worker_repond_204():
     assert transport.calls == [
         ("POST", "/unload", {"reason": "diarization"}, 10.0)
     ]
+
+
+@pytest.mark.asyncio
+async def test_health_lit_la_vram_allouee_par_le_worker():
+    transport = FakeTransport(
+        TransportResponse(
+            status=200,
+            body=b'{"state":"ready","vram_allocated_mib":4321.5}',
+            headers={"content-type": "application/json"},
+        )
+    )
+
+    health = await make_client(transport).health()
+
+    assert health.vram_allocated_mib == 4321.5

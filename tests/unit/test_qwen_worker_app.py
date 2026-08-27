@@ -54,14 +54,19 @@ def test_oom_est_assaini_en_503():
 
 
 def test_health_expose_modeles_et_voix_sans_charger():
-    response = TestClient(create_worker_app(FakeManager(), ["custom", "base"])).get(
-        "/health"
-    )
+    response = TestClient(
+        create_worker_app(
+            FakeManager(),
+            ["custom", "base"],
+            memory_allocated_mib=lambda: 4321.5,
+        )
+    ).get("/health")
     assert response.status_code == 200
     body = response.json()
     assert body["downloaded_models"] == ["custom", "base"]
     assert "Ryan" in body["speakers"]
     assert body["precision"] == "bfloat16"
+    assert body["vram_allocated_mib"] == 4321.5
 
 
 def test_unload_est_idempotent():

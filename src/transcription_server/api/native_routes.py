@@ -105,6 +105,7 @@ async def health(
                 features=list(worker.features),
                 last_error=worker.last_error,
                 pid=worker.pid,
+                vram_allocated_mib=worker.vram_allocated_mib,
             )
         except TtsUnavailableError as exc:
             status = "degraded"

@@ -63,6 +63,7 @@ class WorkerHealth:
     features: tuple[str, ...] = ()
     last_error: str | None = None
     pid: int | None = None
+    vram_allocated_mib: float | None = None
     details: dict[str, object] = field(default_factory=dict)
 
 

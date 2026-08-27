@@ -64,6 +64,7 @@ class TtsHealthOut(BaseModel):
     features: list[str] = Field(default_factory=list)
     last_error: str | None = None
     pid: int | None = None
+    vram_allocated_mib: float | None = None
 
 
 def turn_to_out(turn: Turn, include_words: bool) -> TurnOut:

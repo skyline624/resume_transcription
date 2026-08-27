@@ -39,7 +39,12 @@ class UnloadPayload(BaseModel):
     reason: str = "explicit"
 
 
-def create_worker_app(manager, downloaded_models: list[str], idle_poll_s: float = 30.0):
+def create_worker_app(
+    manager,
+    downloaded_models: list[str],
+    idle_poll_s: float = 30.0,
+    memory_allocated_mib=lambda: 0.0,
+):
     @asynccontextmanager
     async def lifespan(app):
         async def monitor():
@@ -68,6 +73,7 @@ def create_worker_app(manager, downloaded_models: list[str], idle_poll_s: float 
             "speakers": SPEAKERS,
             "features": ["custom_voice", "clone", "voice_design"],
             "pid": os.getpid(),
+            "vram_allocated_mib": memory_allocated_mib(),
         }
 
     @app.post("/generate")

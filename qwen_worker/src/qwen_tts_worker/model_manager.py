@@ -144,3 +144,12 @@ def cuda_cleanup() -> None:
         torch.cuda.empty_cache()
         if hasattr(torch.cuda, "ipc_collect"):
             torch.cuda.ipc_collect()
+
+
+def cuda_memory_allocated_mib() -> float:
+    """Retourne la VRAM active vue par le processus worker Qwen."""
+    import torch
+
+    if not torch.cuda.is_available():
+        return 0.0
+    return torch.cuda.memory_allocated() / 2**20

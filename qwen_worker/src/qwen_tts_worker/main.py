@@ -8,7 +8,12 @@ import uvicorn
 from qwen_tts_worker.app import create_worker_app
 from qwen_tts_worker.download import preload_model_ids
 from qwen_tts_worker.domain import Mode
-from qwen_tts_worker.model_manager import QwenModelManager, cuda_cleanup, load_qwen_model
+from qwen_tts_worker.model_manager import (
+    QwenModelManager,
+    cuda_cleanup,
+    cuda_memory_allocated_mib,
+    load_qwen_model,
+)
 
 
 def main() -> None:
@@ -35,7 +40,11 @@ def main() -> None:
         float(os.environ.get("TTS_IDLE_UNLOAD_S", "300")),
     )
     downloaded = list(preload_model_ids())
-    app = create_worker_app(manager, downloaded)
+    app = create_worker_app(
+        manager,
+        downloaded,
+        memory_allocated_mib=cuda_memory_allocated_mib,
+    )
     uvicorn.run(app, uds=str(socket), workers=1, log_level="info")
 
 

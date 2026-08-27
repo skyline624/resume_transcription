@@ -92,15 +92,12 @@ def current_commit(explicit: str | None = None) -> str:
     return result.stdout.strip()
 
 
-def free_vram_mib() -> float | None:
-    try:
-        import torch
-    except ImportError:
-        return None
-    if not torch.cuda.is_available():
-        return None
-    free, _ = torch.cuda.mem_get_info()
-    return free / 2**20
+def worker_vram_mib(client: httpx.Client) -> float | None:
+    """Lit la VRAM dans le processus qui possède réellement le modèle Qwen."""
+    response = client.get("/health")
+    response.raise_for_status()
+    value = response.json().get("tts", {}).get("vram_allocated_mib")
+    return float(value) if isinstance(value, (int, float)) else None
 
 
 def unload_worker(socket_path: Path) -> None:
@@ -184,16 +181,15 @@ def run_benchmark(args: argparse.Namespace) -> list[dict[str, Any]]:
     with httpx.Client(base_url=args.base_url, timeout=timeout) as client:
         for item in corpus:
             unload_worker(args.worker_socket)
-            free_before = free_vram_mib()
             _, cold_latency = generate(
                 client, item, args.model, args.voice, args.instructions
             )
             audio, warm_latency = generate(
                 client, item, args.model, args.voice, args.instructions
             )
+            vram_used_mib = worker_vram_mib(client)
             path = output_audio / f"qwen-{item.id}.wav"
             path.write_bytes(audio)
-            free_after = free_vram_mib()
             transcript = transcribe(client, path)
             rows.append(
                 _record(
@@ -211,11 +207,7 @@ def run_benchmark(args: argparse.Namespace) -> list[dict[str, Any]]:
                     transcript=transcript,
                     cold_latency_s=cold_latency,
                     warm_latency_s=warm_latency,
-                    vram_used_mib=(
-                        max(0.0, free_before - free_after)
-                        if free_before is not None and free_after is not None
-                        else None
-                    ),
+                    vram_used_mib=vram_used_mib,
                 )
             )
 
