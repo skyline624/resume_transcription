@@ -11,3 +11,5 @@ build/
 .worktrees/
 sorties/
 benchmark-results/
+node_modules/
+coverage/

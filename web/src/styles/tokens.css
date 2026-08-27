@@ -1,0 +1,24 @@
+:root {
+  color-scheme: light;
+  --mist: #eef3f4;
+  --white: #ffffff;
+  --ink: #172428;
+  --slate: #607177;
+  --petrol: #176b75;
+  --petrol-dark: #0f525a;
+  --record: #c94f46;
+  --record-dark: #a83b34;
+  --line: #d5dfe1;
+  --soft-petrol: #dcebed;
+  --shadow: 0 8px 24px rgb(23 36 40 / 8%);
+  --font-display: Bahnschrift, "Arial Narrow", sans-serif;
+  --font-body: "Segoe UI", system-ui, sans-serif;
+  --font-data: Consolas, "SFMono-Regular", monospace;
+  --radius: 10px;
+  --space-1: 0.25rem;
+  --space-2: 0.5rem;
+  --space-3: 0.75rem;
+  --space-4: 1rem;
+  --space-6: 1.5rem;
+  --space-8: 2rem;
+}
