@@ -96,13 +96,14 @@ class UnixTtsClient:
             raise TtsUnavailableError(
                 "empty_audio", "Le worker TTS n'a produit aucun audio."
             )
+        headers = {name.lower(): value for name, value in response.headers.items()}
         try:
             return SynthesisResult(
                 audio_wav=response.body,
-                sample_rate=int(response.headers["X-TTS-Sample-Rate"]),
-                model=response.headers["X-TTS-Model"],
-                load_ms=float(response.headers.get("X-TTS-Load-Ms", 0)),
-                inference_ms=float(response.headers.get("X-TTS-Inference-Ms", 0)),
+                sample_rate=int(headers["x-tts-sample-rate"]),
+                model=headers["x-tts-model"],
+                load_ms=float(headers.get("x-tts-load-ms", 0)),
+                inference_ms=float(headers.get("x-tts-inference-ms", 0)),
             )
         except (KeyError, ValueError) as exc:
             raise TtsUnavailableError(

@@ -26,6 +26,7 @@ dev = [
     # dans son TestClient et deprecie l'ancien, avec un avertissement que
     # `filterwarnings = ["error"]` transformerait en echec.
     "httpx2>=2.0",
+    "openai>=2,<3",
 ]
 
 [build-system]

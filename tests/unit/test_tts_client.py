@@ -102,6 +102,31 @@ async def test_audio_vide_est_refuse():
 
 
 @pytest.mark.asyncio
+async def test_en_tetes_http_sont_lus_sans_sensibilite_a_la_casse():
+    transport = FakeTransport(
+        TransportResponse(
+            status=200,
+            body=b"RIFFaudio",
+            headers={
+                "x-tts-sample-rate": "24000",
+                "x-tts-model": "custom",
+                "x-tts-load-ms": "1.5",
+                "x-tts-inference-ms": "3.5",
+            },
+        )
+    )
+
+    result = await make_client(transport).synthesize(
+        SynthesisRequest(text="Bonjour", mode=TtsMode.CUSTOM_VOICE, voice="Ryan")
+    )
+
+    assert result.sample_rate == 24_000
+    assert result.model == "custom"
+    assert result.load_ms == 1.5
+    assert result.inference_ms == 3.5
+
+
+@pytest.mark.asyncio
 async def test_unload_est_idempotent_quand_worker_repond_204():
     transport = FakeTransport(TransportResponse(status=204, body=b"", headers={}))
     await make_client(transport).unload(reason="diarization")

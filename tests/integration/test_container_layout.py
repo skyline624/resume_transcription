@@ -1,4 +1,5 @@
 from pathlib import Path
+import tomllib
 
 import yaml
 
@@ -31,3 +32,9 @@ def test_image_installe_le_support_venv_de_python_312():
 def test_image_installe_le_binaire_sox_requis_par_qwen():
     dockerfile = (ROOT / "docker" / "Dockerfile").read_text(encoding="utf-8")
     assert "        sox \\\n" in dockerfile
+
+
+def test_sdk_openai_est_une_dependance_de_developpement_uniquement():
+    project = tomllib.loads((ROOT / "pyproject.toml").read_text(encoding="utf-8"))
+    assert "openai>=2,<3" in project["project"]["optional-dependencies"]["dev"]
+    assert "openai>=2,<3" not in project["project"]["dependencies"]
