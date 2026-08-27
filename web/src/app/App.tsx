@@ -1,5 +1,6 @@
 import { useEffect, useState } from "preact/hooks";
 
+import { HealthBar } from "../features/health/HealthBar";
 import { readRoute, routeHref, type RouteName } from "./routes";
 
 const navigation: Array<{ route: RouteName; label: string; hint: string }> = [
@@ -47,10 +48,7 @@ export function App() {
             <small>Parakeet + Qwen</small>
           </span>
         </a>
-        <button class="server-pill" type="button" aria-label="Détails du serveur">
-          <span class="server-pill__dot" aria-hidden="true" />
-          Connexion locale
-        </button>
+        <HealthBar />
       </header>
 
       <nav class="main-nav" aria-label="Navigation principale">
