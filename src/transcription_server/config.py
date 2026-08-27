@@ -71,6 +71,10 @@ class Settings(BaseSettings):
     tts_reference_max_clipped_ratio: float = Field(default=0.01, ge=0, le=1)
     voice_store_path: Path = Path("/app/voices")
 
+    # Ressources Preact compilées par l'étape Node de l'image. L'API reste
+    # utilisable lorsque ce répertoire est absent (développement et tests).
+    web_dist_path: Path = Path("/app/web-dist")
+
     host: str = "0.0.0.0"
     port: int = Field(default=8000, gt=0, lt=65536)
     max_upload_mb: int = Field(default=1024, gt=0)

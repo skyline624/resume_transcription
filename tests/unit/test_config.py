@@ -11,6 +11,12 @@ from transcription_server.config import Settings, get_settings
 TOKEN = "hf_pour_les_tests"
 
 
+def test_chemin_du_build_web_est_configurable(monkeypatch, tmp_path):
+    monkeypatch.setenv("WEB_DIST_PATH", str(tmp_path))
+
+    assert Settings(_env_file=None, enable_diarization=False).web_dist_path == tmp_path
+
+
 def test_defauts_conformes_a_la_spec():
     s = Settings(_env_file=None, hf_token=TOKEN)
     assert s.asr_model == "nvidia/parakeet-tdt-0.6b-v3"

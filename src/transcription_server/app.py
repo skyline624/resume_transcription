@@ -11,6 +11,7 @@ from transcription_server.api import (
     summary_routes,
     tts_routes,
     voice_routes,
+    web,
 )
 from transcription_server.asr.engine import AsrEngine
 from transcription_server.config import Settings
@@ -121,6 +122,7 @@ def create_app(
     app.include_router(summary_routes.router)
     app.include_router(tts_routes.router)
     app.include_router(voice_routes.router)
+    web.mount_web_ui(app, settings.web_dist_path)
     return app
 
 
