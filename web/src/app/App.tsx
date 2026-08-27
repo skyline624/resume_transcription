@@ -1,6 +1,7 @@
 import { useEffect, useState } from "preact/hooks";
 
 import { HealthBar } from "../features/health/HealthBar";
+import { TranscriptionPage } from "../features/transcription/TranscriptionPage";
 import { readRoute, routeHref, type RouteName } from "./routes";
 
 const navigation: Array<{ route: RouteName; label: string; hint: string }> = [
@@ -77,7 +78,11 @@ export function App() {
           <p>{introductions[route]}</p>
         </div>
         <section class="work-surface" aria-label={`Espace ${active.label}`}>
-          <p class="empty-guidance">Choisissez une source pour commencer.</p>
+          {route === "transcribe" ? (
+            <TranscriptionPage />
+          ) : (
+            <p class="empty-guidance">Choisissez une source pour commencer.</p>
+          )}
         </section>
       </main>
     </div>

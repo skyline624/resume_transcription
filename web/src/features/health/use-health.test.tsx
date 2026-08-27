@@ -19,7 +19,9 @@ describe("useHealth", () => {
     await act(async () => Promise.resolve());
     expect(services.http.getJson).toHaveBeenCalledTimes(1);
 
-    await act(async () => vi.advanceTimersByTimeAsync(10_000));
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(10_000);
+    });
     expect(services.http.getJson).toHaveBeenCalledTimes(2);
   });
 });

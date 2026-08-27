@@ -433,6 +433,120 @@ h1 {
   width: 100%;
 }
 
+.workflow-stack,
+.workflow-form {
+  display: grid;
+  gap: var(--space-6);
+}
+
+.options-panel {
+  border-bottom: 1px solid var(--line);
+  border-top: 1px solid var(--line);
+  padding: var(--space-4) 0;
+}
+
+.options-panel summary {
+  cursor: pointer;
+  font-family: var(--font-display);
+  font-weight: 600;
+}
+
+.options-grid {
+  display: grid;
+  gap: var(--space-4);
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  margin-top: var(--space-5);
+}
+
+.options-grid label {
+  display: grid;
+  gap: var(--space-2);
+}
+
+.options-grid input:not([type="checkbox"]),
+.options-grid select {
+  background: var(--white);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  min-height: 2.6rem;
+  padding: 0.45rem 0.65rem;
+  width: 100%;
+}
+
+.options-grid .check-field {
+  align-items: center;
+  display: flex;
+}
+
+.result-panel {
+  border-top: 1px solid var(--line);
+  display: grid;
+  gap: var(--space-5);
+  padding-top: var(--space-6);
+}
+
+.result-panel__heading {
+  align-items: flex-start;
+  display: flex;
+  gap: var(--space-4);
+  justify-content: space-between;
+}
+
+.result-panel h2 {
+  margin: 0;
+}
+
+.data-badge {
+  background: var(--mist);
+  border-radius: 999px;
+  font-family: var(--font-data);
+  padding: 0.35rem 0.65rem;
+}
+
+.transcript-text {
+  font-size: 1.08rem;
+  line-height: 1.7;
+  margin: 0;
+  white-space: pre-wrap;
+}
+
+.turn-list {
+  display: grid;
+  gap: var(--space-3);
+  padding-left: var(--space-5);
+}
+
+.turn-list li span {
+  font-family: var(--font-data);
+  font-size: 0.76rem;
+  font-weight: 700;
+}
+
+.turn-list time {
+  color: var(--slate);
+  font-family: var(--font-data);
+  font-size: 0.72rem;
+  margin-left: var(--space-3);
+}
+
+.turn-list p {
+  margin: var(--space-1) 0 0;
+}
+
+.result-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+}
+
+.action-link {
+  align-items: center;
+  display: inline-flex;
+  justify-content: center;
+  justify-self: start;
+  text-decoration: none;
+}
+
 .operation-status {
   align-items: center;
   color: var(--slate);
@@ -547,6 +661,11 @@ h1 {
 
   .work-surface {
     margin-top: var(--space-6);
+  }
+
+  .options-grid,
+  .health-grid {
+    grid-template-columns: 1fr;
   }
 }
 

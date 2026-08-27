@@ -2,7 +2,7 @@ import type { ComponentChildren, JSX, Ref } from "preact";
 
 type ButtonVariant = "primary" | "secondary" | "danger";
 
-interface ButtonProps extends JSX.HTMLAttributes<HTMLButtonElement> {
+interface ButtonProps extends JSX.ButtonHTMLAttributes<HTMLButtonElement> {
   children: ComponentChildren;
   variant?: ButtonVariant;
   buttonRef?: Ref<HTMLButtonElement>;

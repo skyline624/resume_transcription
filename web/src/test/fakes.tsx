@@ -1,7 +1,7 @@
 import type { ComponentChildren } from "preact";
 import { vi } from "vitest";
 
-import type { AudioResult, Health, ListResponse, Voice } from "../api/contracts";
+import type { AudioResult, Health, ListResponse, TranscriptionResult, Voice } from "../api/contracts";
 import { ServicesProvider, type AppServices, type HttpPort } from "../app/services";
 import type { RecorderPort } from "../media/recorder";
 import type { HistoryEntry, HistoryLimits, HistoryRepository } from "../storage/history";
@@ -32,8 +32,9 @@ export function fakeServices(options: FakeOptions = {}) {
       throw new Error(`GET non simulé : ${path}`);
     }),
     postJson: vi.fn(async (): Promise<unknown> => ({})),
-    postForm: vi.fn(async (_path: string, form: FormData): Promise<unknown> => {
+    postForm: vi.fn(async (path: string, form: FormData): Promise<unknown> => {
       httpImpl.lastForm = form;
+      if (path === "/transcribe") return defaultTranscription();
       return {};
     }),
     postBlob: vi.fn(async (): Promise<AudioResult> => ({
@@ -120,4 +121,16 @@ function mergeHistoryEntry(partial: DeepPartial<HistoryEntry>): HistoryEntry {
     metadata: {},
     ...partial,
   } as HistoryEntry;
+}
+
+function defaultTranscription(): TranscriptionResult {
+  return {
+    text: "Bonjour à tous",
+    language: "fr",
+    duration: 3.5,
+    speakers: ["SPEAKER_00"],
+    turns: [],
+    timing: { total: 0.5 },
+    channels_used: 1,
+  };
 }
