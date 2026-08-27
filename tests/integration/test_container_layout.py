@@ -1,10 +1,15 @@
 from pathlib import Path
 import tomllib
 
+import pytest
 import yaml
 
 
 ROOT = Path(__file__).parents[2]
+pytestmark = pytest.mark.skipif(
+    not (ROOT / "docker-compose.yml").exists(),
+    reason="Ces assertions exigent le contexte complet du depot.",
+)
 
 
 def test_compose_publie_uniquement_api_principale_et_persiste_les_voix():
@@ -38,3 +43,18 @@ def test_sdk_openai_est_une_dependance_de_developpement_uniquement():
     project = tomllib.loads((ROOT / "pyproject.toml").read_text(encoding="utf-8"))
     assert "openai>=2,<3" in project["project"]["optional-dependencies"]["dev"]
     assert "openai>=2,<3" not in project["project"]["dependencies"]
+
+
+def test_scenarios_gpu_disposent_d_un_timeout_dur():
+    project = tomllib.loads((ROOT / "pyproject.toml").read_text(encoding="utf-8"))
+    assert "pytest-timeout>=2,<3" in project["project"]["optional-dependencies"]["dev"]
+
+
+def test_script_de_benchmark_est_inclus_dans_l_image():
+    dockerfile = (ROOT / "docker" / "Dockerfile").read_text(encoding="utf-8")
+    assert "COPY scripts/ ./scripts/" in dockerfile
+
+
+def test_telechargement_huggingface_evite_le_transport_xet_instable():
+    dockerfile = (ROOT / "docker" / "Dockerfile").read_text(encoding="utf-8")
+    assert "HF_HUB_DISABLE_XET=1" in dockerfile

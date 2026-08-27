@@ -41,3 +41,13 @@ def test_chaque_sortie_reelle_est_redecodable(tmp_path: Path, audio_format):
     command.extend(["-i", str(path), "-f", "null", "-"])
     result = subprocess.run(command, capture_output=True, check=False)
     assert result.returncode == 0, result.stderr.decode("utf-8", "replace")
+
+
+def test_wav_final_reste_a_24khz_apres_normalisation_loudness(tmp_path: Path):
+    if shutil.which("ffmpeg") is None:
+        pytest.skip("ffmpeg absent")
+    path = tmp_path / "speech.wav"
+    path.write_bytes(render_output([make_wav()], [0], 1.0, AudioFormat.WAV).data)
+
+    with wave.open(str(path), "rb") as handle:
+        assert handle.getframerate() == 24_000

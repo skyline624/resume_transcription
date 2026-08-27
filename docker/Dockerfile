@@ -19,6 +19,7 @@ ENV PYTHONUNBUFFERED=1 \
     PYTHONDONTWRITEBYTECODE=1 \
     HF_HOME=/app/models \
     HF_HUB_DISABLE_SYMLINKS_WARNING=1 \
+    HF_HUB_DISABLE_XET=1 \
     NUMBA_CACHE_DIR=/tmp/numba_cache \
     PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True
 
@@ -67,6 +68,7 @@ RUN /opt/venv-main/bin/python -c "import nemo, torch; assert torch.version.cuda,
     && /opt/venv-qwen/bin/python -c "import qwen_tts, transformers; assert transformers.__version__ == '4.57.3'; print('qwen transformers', transformers.__version__)"
 
 COPY tests/ ./tests/
+COPY scripts/ ./scripts/
 
 EXPOSE 8000
 

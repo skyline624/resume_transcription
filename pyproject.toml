@@ -27,6 +27,7 @@ dev = [
     # `filterwarnings = ["error"]` transformerait en echec.
     "httpx2>=2.0",
     "openai>=2,<3",
+    "pytest-timeout>=2,<3",
 ]
 
 [build-system]
@@ -39,6 +40,7 @@ packages = ["src/transcription_server"]
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 markers = [
+    "timeout(seconds): borne dure d'un scenario d'integration long",
     "gpu: nécessite CUDA et les dépendances de l'extra gpu (désélectionné par défaut)",
 ]
 addopts = "-m 'not gpu'"

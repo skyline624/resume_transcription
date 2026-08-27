@@ -10,3 +10,4 @@ build/
 .superpowers/
 .worktrees/
 sorties/
+benchmark-results/

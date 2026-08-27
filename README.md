@@ -1,7 +1,7 @@
-# Serveur de transcription Parakeet
+# Serveur audio Parakeet et Qwen3-TTS
 
-Serveur HTTP local qui transcrit un fichier audio avec **NVIDIA Parakeet** sur
-GPU CUDA et sépare les tours de parole par locuteur avec **pyannote**.
+Serveur HTTP local qui transcrit avec **NVIDIA Parakeet**, sépare les locuteurs
+avec **pyannote** et synthétise ou clone une voix avec **Qwen3-TTS 1.7B**.
 
 Il tourne en conteneur Docker : NeMo n'est pas officiellement supporté sous
 Windows, le conteneur Linux supprime ce risque.
@@ -54,7 +54,9 @@ docker compose build     # 15 à 25 min, une seule fois
 docker compose up
 ```
 
-Le **premier lancement télécharge environ 2,6 Go de modèles** dans `./models/`.
+Le **premier lancement télécharge environ 16 Go de modèles** dans `./models/`
+(Parakeet, pyannote et les trois checkpoints Qwen spécialisés). Selon la
+connexion, comptez plusieurs dizaines de minutes avant le premier état sain.
 Ce dossier est monté depuis l'hôte : les poids survivent à toutes les
 reconstructions, et le token n'entre dans aucune couche de l'image.
 
@@ -67,6 +69,67 @@ curl.exe -s http://127.0.0.1:8000/health
 Vous devez y lire `"device":"cuda"` et le nom de votre carte.
 
 ## Utilisation
+
+### Synthèse vocale compatible OpenAI
+
+Les trois checkpoints Qwen vivent dans le même conteneur que Parakeet, mais
+dans un environnement Python et un processus séparés. Le worker n'écoute sur
+aucun port réseau : l'API principale lui parle par le socket Unix privé
+`/run/qwen-tts/worker.sock`. Un seul checkpoint occupe la VRAM à la fois.
+
+```powershell
+curl.exe -sS http://127.0.0.1:8000/v1/audio/speech `
+  -H "Content-Type: application/json" `
+  -d '{"model":"tts-1-hd","voice":"Ryan","input":"Bonjour depuis Qwen.","response_format":"wav"}' `
+  --output parole.wav
+```
+
+Avec le SDK OpenAI 2.x :
+
+```python
+from openai import OpenAI
+
+with OpenAI(api_key="local", base_url="http://127.0.0.1:8000/v1") as client:
+    with client.audio.speech.with_streaming_response.create(
+        model="tts-1-hd",
+        voice="Ryan",
+        input="Bonjour depuis le client OpenAI.",
+        response_format="wav",
+    ) as response:
+        response.stream_to_file("parole.wav")
+```
+
+| Mode | `model` | Champs spécifiques |
+|---|---|---|
+| Voix prédéfinie | `tts-1`, `tts-1-hd`, `gpt-4o-mini-tts` ou `qwen3-tts-custom-voice` | `voice` parmi `Vivian`, `Serena`, `Uncle_Fu`, `Dylan`, `Eric`, `Ryan`, `Aiden`, `Ono_Anna`, `Sohee`; `instructions` facultatif |
+| Création de voix | `qwen3-tts-voice-design` | `instructions` requis, par exemple « voix française chaleureuse et calme » |
+| Clone persistant | `qwen3-tts-clone` | `voice` est l'identifiant créé par `POST /v1/voices` |
+
+Formats de sortie : `mp3`, `opus` (conteneur Ogg), `aac`, `flac`, `wav` et
+`pcm`. La vitesse va de `0.25` à `4.0`. Un texte de plus de 4096 caractères est
+refusé explicitement.
+
+Création et cycle de vie d'une voix consentie :
+
+```powershell
+curl.exe -sS http://127.0.0.1:8000/v1/voices `
+  -F "file=@reference.wav" -F "name=Ma voix" -F "language=fr" `
+  -F "transcript=Texte prononcé dans la référence." -F "consent=true"
+
+curl.exe -sS http://127.0.0.1:8000/v1/voices
+curl.exe -X DELETE http://127.0.0.1:8000/v1/voices/IDENTIFIANT
+```
+
+Le consentement explicite est obligatoire. La référence doit durer de 3 à
+30 secondes, ne pas être silencieuse ni saturée, et est normalisée avant
+stockage dans le volume `tts-voices`. Le clonage ponctuel est disponible via
+`POST /v1/audio/speech/clone`; son fichier temporaire est supprimé après la
+requête. Aucun texte synthétisé ni chemin de référence n'est journalisé.
+
+`GET /health` expose l'état `idle`, `loading`, `ready`, `generating` ou
+`error`, les checkpoints téléchargés, le checkpoint chargé, `bfloat16`, CUDA,
+SDPA et le PID du worker. Une panne, un délai ou un manque de VRAM renvoie 503
+avec un code stable ; il n'existe aucun repli CPU silencieux.
 
 ### Transcription simple
 
@@ -90,6 +153,9 @@ curl.exe -s -F "file=@reunion.mp3" -F "diarize=true" `
 
 | Endpoint | Rôle |
 |---|---|
+| `POST /v1/audio/speech` | Synthèse Qwen compatible avec le client audio OpenAI |
+| `POST /v1/audio/speech/clone` | Clonage ponctuel avec référence consentie |
+| `GET/POST /v1/voices`, `DELETE /v1/voices/{id}` | Registre des voix prédéfinies et clonées |
 | `POST /transcribe` | Transcription native, avec diarization et formats étendus |
 | `POST /summarize` | **Compte-rendu** rédigé par un modèle de langue local |
 | `POST /v1/audio/transcriptions` | **Compatible OpenAI** — vos clients Whisper fonctionnent sans modification |
@@ -213,6 +279,15 @@ un message actionnable — et la transcription, elle, continue de fonctionner.
 | `CHUNK_LENGTH_S` | `480` | Longueur des fenêtres si le VAD est désactivé |
 | `CHUNK_OVERLAP_S` | `15` | Recouvrement si le VAD est désactivé |
 | `TURN_GAP_S` | `1.0` | Silence déclenchant un nouveau tour de parole |
+| `ENABLE_TTS` | `true` | Active Qwen3-TTS et le worker privé |
+| `TTS_CUSTOM_VOICE_MODEL` | `Qwen/Qwen3-TTS-12Hz-1.7B-CustomVoice` | Voix prédéfinies |
+| `TTS_CLONE_MODEL` | `Qwen/Qwen3-TTS-12Hz-1.7B-Base` | Clonage zero-shot |
+| `TTS_VOICE_DESIGN_MODEL` | `Qwen/Qwen3-TTS-12Hz-1.7B-VoiceDesign` | Création de voix par instruction |
+| `TTS_PRECISION` | `bfloat16` | Précision GPU du worker |
+| `TTS_ATTENTION_IMPLEMENTATION` | `sdpa` | Attention PyTorch, sans FlashAttention obligatoire |
+| `TTS_IDLE_UNLOAD_S` | `300` | Délai avant restitution automatique de la VRAM |
+| `TTS_LOAD_TIMEOUT_S` / `TTS_GENERATION_TIMEOUT_S` | `300` / `900` | Délais worker |
+| `VOICE_STORE_PATH` | `/app/voices` | Volume persistant des profils vocaux consentis |
 | `HOST` / `PORT` | `0.0.0.0` / `8000` | Écoute **dans** le conteneur |
 | `MAX_UPLOAD_MB` | `1024` | Taille maximale acceptée |
 | `SUMMARY_MODEL` | `qwen3.8-27b-64k:latest` | Modèle Ollama rédigeant le compte-rendu |

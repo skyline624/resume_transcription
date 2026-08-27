@@ -6,6 +6,7 @@ from pathlib import Path
 import uvicorn
 
 from qwen_tts_worker.app import create_worker_app
+from qwen_tts_worker.download import preload_model_ids
 from qwen_tts_worker.domain import Mode
 from qwen_tts_worker.model_manager import QwenModelManager, cuda_cleanup, load_qwen_model
 
@@ -33,7 +34,7 @@ def main() -> None:
         model_ids, load_qwen_model, cuda_cleanup,
         float(os.environ.get("TTS_IDLE_UNLOAD_S", "300")),
     )
-    downloaded = [item.strip() for item in os.environ.get("TTS_PRELOAD_MODELS", "").split(",") if item.strip()]
+    downloaded = list(preload_model_ids())
     app = create_worker_app(manager, downloaded)
     uvicorn.run(app, uds=str(socket), workers=1, log_level="info")
 

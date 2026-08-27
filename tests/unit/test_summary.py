@@ -192,7 +192,12 @@ def test_le_moteur_indisponible_nomme_le_reglage():
 def client_avec_redaction():
     moteur = StubSummaryEngine("## Objet\nUne réunion.")
     app = create_app(
-        settings=Settings(_env_file=None, enable_diarization=False, device="cpu"),
+        settings=Settings(
+            _env_file=None,
+            enable_diarization=False,
+            enable_summary=True,
+            device="cpu",
+        ),
         asr=StubAsrEngine([Word("bonjour", 0.0, 0.5)]),
         diarization=StubDiarizationEngine([]),
         summary=moteur,

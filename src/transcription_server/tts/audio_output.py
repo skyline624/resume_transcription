@@ -80,7 +80,11 @@ def render_output(
             encoding="utf-8",
         )
         output = root / f"output.{extension}"
-        filters = [*_atempo_filters(speed), "loudnorm=I=-16:TP=-1.0:LRA=11"]
+        filters = [
+            *_atempo_filters(speed),
+            "loudnorm=I=-16:TP=-1.0:LRA=11",
+            "aresample=24000",
+        ]
         execute([
             "ffmpeg", "-nostdin", "-hide_banner", "-loglevel", "error",
             "-f", "concat", "-safe", "0", "-i", str(concat_file),

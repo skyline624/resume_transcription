@@ -41,6 +41,7 @@ def test_vitesse_et_loudness_sont_appliques_au_rendu_final():
     filter_graph = final[final.index("-af") + 1]
     assert "atempo=1.25" in filter_graph
     assert "loudnorm=I=-16:TP=-1.0:LRA=11" in filter_graph
+    assert filter_graph.endswith("aresample=24000")
 
 
 def test_chaque_segment_recoit_un_fondu_aux_deux_extremites():
