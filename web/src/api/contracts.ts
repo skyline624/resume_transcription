@@ -72,7 +72,8 @@ export interface Voice {
   kind: "builtin" | "clone";
   language?: string;
   created_at?: string;
-  duration_s?: number;
+  duration?: number;
+  transcript_source?: "provided" | "parakeet";
 }
 
 export interface ListResponse<T> {

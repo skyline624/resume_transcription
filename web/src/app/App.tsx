@@ -4,6 +4,7 @@ import { HealthBar } from "../features/health/HealthBar";
 import { SpeechPage } from "../features/speech/SpeechPage";
 import { SummaryPage } from "../features/summary/SummaryPage";
 import { TranscriptionPage } from "../features/transcription/TranscriptionPage";
+import { VoicesPage } from "../features/voices/VoicesPage";
 import { readRoute, routeHref, type RouteName } from "./routes";
 
 const navigation: Array<{ route: RouteName; label: string; hint: string }> = [
@@ -83,7 +84,8 @@ export function App() {
           {route === "transcribe" ? <TranscriptionPage /> : null}
           {route === "summarize" ? <SummaryPage /> : null}
           {route === "speech" ? <SpeechPage /> : null}
-          {route !== "transcribe" && route !== "summarize" && route !== "speech" ? (
+          {route === "voices" ? <VoicesPage /> : null}
+          {route === "history" ? (
             <p class="empty-guidance">Choisissez une source pour commencer.</p>
           ) : null}
         </section>

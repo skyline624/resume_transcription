@@ -669,6 +669,76 @@ h1 {
   margin-top: 0.22rem;
 }
 
+.voice-group h2 {
+  font-size: 1.05rem;
+  margin: 0 0 var(--space-3);
+}
+
+.voice-grid {
+  display: grid;
+  gap: var(--space-3);
+  grid-template-columns: repeat(auto-fill, minmax(15rem, 1fr));
+}
+
+.voice-card {
+  align-items: center;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  display: grid;
+  gap: var(--space-3);
+  grid-template-columns: auto minmax(0, 1fr);
+  padding: var(--space-4);
+}
+
+.voice-card__mark {
+  align-items: center;
+  background: var(--soft-petrol);
+  border-radius: 50%;
+  color: var(--petrol-dark);
+  display: flex;
+  font-family: var(--font-display);
+  font-weight: 700;
+  height: 2.6rem;
+  justify-content: center;
+  width: 2.6rem;
+}
+
+.voice-card h3,
+.voice-card p {
+  margin: 0;
+}
+
+.voice-card p,
+.voice-card small {
+  color: var(--slate);
+}
+
+.voice-card .button {
+  grid-column: 1 / -1;
+  justify-self: start;
+}
+
+.voice-enrollment {
+  border-top: 1px solid var(--line);
+  padding-top: var(--space-5);
+}
+
+.voice-enrollment > summary {
+  cursor: pointer;
+  font-family: var(--font-display);
+  font-weight: 700;
+}
+
+.voice-enrollment > form {
+  margin-top: var(--space-5);
+}
+
+.consent-copy {
+  color: var(--slate);
+  line-height: 1.5;
+  margin: 0;
+}
+
 .operation-status {
   align-items: center;
   color: var(--slate);
