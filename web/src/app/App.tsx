@@ -1,6 +1,7 @@
 import { useEffect, useState } from "preact/hooks";
 
 import { HealthBar } from "../features/health/HealthBar";
+import { HistoryPage } from "../features/history/HistoryPage";
 import { SpeechPage } from "../features/speech/SpeechPage";
 import { SummaryPage } from "../features/summary/SummaryPage";
 import { TranscriptionPage } from "../features/transcription/TranscriptionPage";
@@ -85,9 +86,7 @@ export function App() {
           {route === "summarize" ? <SummaryPage /> : null}
           {route === "speech" ? <SpeechPage /> : null}
           {route === "voices" ? <VoicesPage /> : null}
-          {route === "history" ? (
-            <p class="empty-guidance">Choisissez une source pour commencer.</p>
-          ) : null}
+          {route === "history" ? <HistoryPage /> : null}
         </section>
       </main>
     </div>

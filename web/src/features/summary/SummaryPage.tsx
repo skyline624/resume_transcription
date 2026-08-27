@@ -35,8 +35,8 @@ export function SummaryPage() {
     let disposed = false;
     void history.get(historyId).then((entry) => {
       if (disposed) return;
-      if (!entry || entry.kind !== "transcription") {
-        setLoadError("Cette transcription n’existe plus dans l’historique local.");
+      if (!entry) {
+        setLoadError("Ce texte n’existe plus dans l’historique local.");
         setTranscript("");
         return;
       }

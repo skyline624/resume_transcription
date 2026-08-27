@@ -23,6 +23,8 @@ export function SpeechPage() {
   const [pending, setPending] = useState(false);
   const [startedAt, setStartedAt] = useState(0);
   const [error, setError] = useState<string | null>(null);
+  const [historyMessage, setHistoryMessage] = useState<string | null>(null);
+  const sourceHistoryId = historyIdFromHash();
 
   const filteredVoices = useMemo(
     () => voices.filter((item) => item.kind === (mode === "qwen3-tts-clone" ? "clone" : "builtin")),
@@ -43,6 +45,19 @@ export function SpeechPage() {
       disposed = true;
     };
   }, [http]);
+
+  useEffect(() => {
+    if (!sourceHistoryId) return;
+    let disposed = false;
+    void history.get(sourceHistoryId).then((entry) => {
+      if (disposed) return;
+      if (entry) setInput(entry.resultText);
+      else setHistoryMessage("Ce texte n’existe plus dans l’historique local.");
+    });
+    return () => {
+      disposed = true;
+    };
+  }, [history, sourceHistoryId]);
 
   useEffect(() => {
     setVoice(filteredVoices[0]?.id ?? "");
@@ -126,6 +141,7 @@ export function SpeechPage() {
           <label><span>Format</span><select aria-label="Format audio" onChange={(event) => setResponseFormat(event.currentTarget.value as AudioFormat)} value={responseFormat}>{audioFormatOptions()}</select></label>
         </div>
         <OperationStatus active={pending} label="Synthèse en cours" startedAt={startedAt} />
+        {historyMessage ? <p class="service-guidance">{historyMessage}</p> : null}
         {error ? <p class="field__error" role="alert">{error}</p> : null}
         <Button disabled={!canSubmit} type="submit" variant="primary">Créer l’audio</Button>
       </form>
@@ -133,4 +149,9 @@ export function SpeechPage() {
       <OneShotClone />
     </div>
   );
+}
+
+function historyIdFromHash(): string | null {
+  const query = window.location.hash.split("?", 2)[1];
+  return query ? new URLSearchParams(query).get("history") : null;
 }
