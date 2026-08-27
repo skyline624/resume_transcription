@@ -272,7 +272,7 @@ Mesuré avec `qwen3.8-27b` (Q4_K_M) : **1 min 53** pour une réunion de 51 min,
 > une transcription, celle-ci échouera faute de place**. Deux parades :
 >
 > ```powershell
-> ollama stop qwen3.8-27b-64k:latest        # libérer immédiatement
+> ollama stop qwen3.8-27b-unc-32k:latest    # libérer immédiatement
 > $env:OLLAMA_KEEP_ALIVE = "60"             # ou raccourcir la rétention à 60 s
 > ```
 >
@@ -311,7 +311,7 @@ un message actionnable — et la transcription, elle, continue de fonctionner.
 | `VOICE_STORE_PATH` | `/app/voices` | Volume persistant des profils vocaux consentis |
 | `HOST` / `PORT` | `0.0.0.0` / `8000` | Écoute **dans** le conteneur |
 | `MAX_UPLOAD_MB` | `1024` | Taille maximale acceptée |
-| `SUMMARY_MODEL` | `qwen3.8-27b-64k:latest` | Modèle Ollama rédigeant le compte-rendu |
+| `SUMMARY_MODEL` | `qwen3.8-27b-unc-32k:latest` | Modèle Ollama rédigeant le compte-rendu |
 | `OLLAMA_BASE_URL` | `http://host.docker.internal:11434` | Ollama vu depuis le conteneur |
 | `ENABLE_SUMMARY` | `true` | `false` désactive `/summarize` sans toucher au reste |
 | `SUMMARY_TIMEOUT_S` | `900` | Délai maximal de rédaction |

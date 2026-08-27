@@ -44,7 +44,7 @@ class Settings(BaseSettings):
     # l'installation d'Ollama contient. Un modele « :cloud » fait transiter la
     # conversation par les serveurs d'Ollama — a ne poser qu'en connaissance
     # de cause.
-    summary_model: str = "qwen3.8-27b-64k:latest"
+    summary_model: str = "qwen3.8-27b-unc-32k:latest"
     # Depuis le conteneur, l'hote se joint par ce nom : ni 172.17.0.1 ni
     # gateway.docker.internal ne repondent sous Docker Desktop.
     ollama_base_url: str = "http://host.docker.internal:11434"

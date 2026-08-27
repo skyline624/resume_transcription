@@ -31,6 +31,7 @@ def test_defauts_conformes_a_la_spec():
     assert s.vad_max_segment_s == 5.0
     assert s.vad_fallback_overlap_s == 1.0
     assert s.turn_gap_s == 1.0
+    assert s.summary_model == "qwen3.8-27b-unc-32k:latest"
     assert s.host == "0.0.0.0"
     assert s.port == 8000
     assert s.max_upload_mb == 1024
