@@ -58,3 +58,14 @@ def test_script_de_benchmark_est_inclus_dans_l_image():
 def test_telechargement_huggingface_evite_le_transport_xet_instable():
     dockerfile = (ROOT / "docker" / "Dockerfile").read_text(encoding="utf-8")
     assert "HF_HUB_DISABLE_XET=1" in dockerfile
+
+
+def test_frontend_est_construit_dans_une_etape_node_ephemere():
+    dockerfile = (ROOT / "docker" / "Dockerfile").read_text(encoding="utf-8")
+    assert "FROM node:24-alpine AS web-builder" in dockerfile
+    assert "RUN npm test" in dockerfile
+    assert "RUN npm run build" in dockerfile
+    assert "COPY --from=web-builder /web/dist /app/web-dist" in dockerfile
+    final_stage = dockerfile.split("FROM pytorch/", 1)[1]
+    assert "apt-get install -y nodejs" not in final_stage
+    assert "apt-get install -y npm" not in final_stage

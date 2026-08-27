@@ -54,6 +54,10 @@ docker compose build     # 15 à 25 min, une seule fois
 docker compose up
 ```
 
+Ouvrez ensuite **http://127.0.0.1:8000/** dans le navigateur. L'interface et
+l'API sont servies par le même conteneur et le même port ; aucun serveur web
+supplémentaire ne tourne en production.
+
 Le **premier lancement télécharge environ 16 Go de modèles** dans `./models/`
 (Parakeet, pyannote et les trois checkpoints Qwen spécialisés). Selon la
 connexion, comptez plusieurs dizaines de minutes avant le premier état sain.
@@ -69,6 +73,23 @@ curl.exe -s http://127.0.0.1:8000/health
 Vous devez y lire `"device":"cuda"` et le nom de votre carte.
 
 ## Utilisation
+
+### Interface web locale
+
+Les cinq espaces couvrent toute l'API : **Transcrire**, **Résumer**,
+**Synthétiser**, **Voix** et **Historique**. Un fichier peut être choisi sur le
+disque ou enregistré au microphone après autorisation explicite du navigateur.
+Les prises micro et références vocales ne sont jamais conservées dans
+l'historique.
+
+L'historique reste exclusivement dans IndexedDB, dans ce navigateur. Il peut
+être filtré, limité ou entièrement effacé depuis l'espace **Historique**. Les
+textes de transcription et de résumé y sont ajoutés automatiquement ; un audio
+Qwen n'y entre qu'après l'action **Conserver**.
+
+Cet outil est conçu pour une utilisation locale mono-utilisateur. N'exposez
+pas le port `8000` sur un réseau sans ajouter une authentification, TLS et une
+politique d'accès adaptée.
 
 ### Synthèse vocale compatible OpenAI
 
@@ -308,6 +329,24 @@ environnement d'une cinquantaine de mégaoctets :
 uv venv --python 3.12
 uv pip install -e ".[dev]"
 .venv\Scripts\python.exe -m pytest
+```
+
+Pour travailler sur l'interface avec rechargement instantané, laissez l'API
+sur le port 8000 puis lancez Vite dans un second terminal :
+
+```powershell
+cd web
+npm ci
+npm run dev
+```
+
+Vite relaie `/health`, `/transcribe`, `/summarize` et `/v1` vers l'API locale.
+Les vérifications frontend sont :
+
+```powershell
+npm test
+npm run typecheck
+npm run build
 ```
 
 Les tests d'inférence réelle sont marqués `gpu` et désélectionnés par défaut.

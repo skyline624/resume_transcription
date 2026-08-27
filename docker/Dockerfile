@@ -1,3 +1,11 @@
+FROM node:24-alpine AS web-builder
+WORKDIR /web
+COPY web/package.json web/package-lock.json ./
+RUN npm ci
+COPY web/ ./
+RUN npm test
+RUN npm run build
+
 # torch 2.11 satisfait NeMo (>=2.6) et pyannote (>=2.8) ; CUDA 12.8 est le
 # socle le mieux eprouve pour NeMo, et le driver 610.88 de l'hote est
 # retro-compatible.
@@ -60,6 +68,7 @@ RUN /opt/venv-qwen/bin/pip install --no-cache-dir --no-deps -e ./qwen_worker
 
 COPY src/ ./src/
 COPY qwen_worker/src/ ./qwen_worker/src/
+COPY --from=web-builder /web/dist /app/web-dist
 
 # Verification au build : si l'installation de NeMo ou pyannote a remplace le
 # torch CUDA par une roue CPU, autant l'apprendre maintenant qu'au premier

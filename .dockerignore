@@ -7,3 +7,6 @@ __pycache__/
 docs/
 .env
 .superpowers/
+web/node_modules/
+web/dist/
+web/coverage/
