@@ -141,6 +141,7 @@ def test_ollama_rend_le_texte_et_pose_une_temperature_basse(monkeypatch):
     assert envoye["url"] == "http://ollama:11434/api/generate"
     assert envoye["corps"]["model"] == "qwen"
     assert envoye["corps"]["stream"] is False
+    assert envoye["corps"]["keep_alive"] == 0
     assert envoye["corps"]["options"]["temperature"] <= 0.3
 
 

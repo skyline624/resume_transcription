@@ -33,6 +33,10 @@ class OllamaSummaryEngine:
                 "model": self._model,
                 "prompt": prompt,
                 "stream": False,
+                # Ollama conserve sinon les poids en VRAM plusieurs minutes.
+                # Le serveur partage un seul GPU avec ASR, diarization et TTS :
+                # le redacteur doit donc liberer sa place des la reponse rendue.
+                "keep_alive": 0,
                 # La redaction d'un compte-rendu doit etre reproductible : une
                 # temperature elevee produirait un texte different a chaque
                 # appel sur la meme reunion, ce qui rend toute comparaison

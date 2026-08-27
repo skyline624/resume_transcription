@@ -182,8 +182,7 @@ async def transcribe(
         # Le verrou serialise les travaux GPU ; run_in_threadpool rend la main
         # a la boucle pendant l'inference, donc /health repond toujours.
         async with state.gpu_lock:
-            if should_diarize:
-                await state.unload_tts_for_diarization()
+            await state.prepare_transcription()
             result = await run_in_threadpool(
                 run_pipeline,
                 path=path,

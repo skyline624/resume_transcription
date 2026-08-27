@@ -35,13 +35,32 @@ def _annotation_de(sortie):
 class PyannoteEngine:
     """Separe les locuteurs avec un pipeline pyannote deja charge."""
 
-    def __init__(self, pipeline, model_name: str) -> None:
+    def __init__(self, pipeline, model_name: str, device: str = "cpu") -> None:
         self._pipeline = pipeline
         self._name = model_name
+        self._device = device
+        self._resident_device = device
 
     @property
     def name(self) -> str:
         return self._name
+
+    def release_gpu(self) -> None:
+        """Place le pipeline en RAM jusqu'a la prochaine diarization."""
+        if self._resident_device != "cuda":
+            return
+        import torch
+
+        self._pipeline.to(torch.device("cpu"))
+        self._resident_device = "cpu"
+
+    def _ensure_target_device(self) -> None:
+        if self._resident_device == self._device:
+            return
+        import torch
+
+        self._pipeline.to(torch.device(self._device))
+        self._resident_device = self._device
 
     def diarize(
         self,
@@ -60,6 +79,7 @@ class PyannoteEngine:
         if audio.size == 0:
             return []
 
+        self._ensure_target_device()
         # pyannote attend un tenseur (canaux, echantillons). `ascontiguousarray`
         # protege d'un tableau non contigu venant d'une tranche de fenetre.
         forme_onde = torch.from_numpy(np.ascontiguousarray(audio)).unsqueeze(0)
@@ -121,4 +141,4 @@ def load_pyannote_engine(
 
     pipeline.to(torch.device(device))
     logger.info("Pipeline de diarization chargé sur %s.", device)
-    return PyannoteEngine(pipeline=pipeline, model_name=model_name)
+    return PyannoteEngine(pipeline=pipeline, model_name=model_name, device=device)

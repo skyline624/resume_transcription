@@ -32,9 +32,19 @@ class BrokenTts(RecordingTts):
         raise TtsUnavailableError("worker_unreachable", "indisponible")
 
 
+class RecordingAsr:
+    name = "recording-asr"
+    def __init__(self, events): self.events = events
+    def release_gpu(self): self.events.append("asr:cpu")
+    def transcribe(self, audio, language):
+        self.events.append("asr:start")
+        return [Word("bonjour", 0, 0.5)]
+
+
 class RecordingDiarization:
     name = "recording"
     def __init__(self, events): self.events = events
+    def release_gpu(self): self.events.append("diarization:cpu")
     def diarize(self, audio, num_speakers=None, min_speakers=None, max_speakers=None):
         self.events.append("diarization:start")
         return [SpeakerSegment("SPEAKER_00", 0, 1)]
@@ -44,7 +54,7 @@ def test_diarization_decharge_qwen_apres_acquisition_du_verrou():
     events = []
     app = create_app(
         Settings(_env_file=None, enable_diarization=False, device="cpu"),
-        StubAsrEngine([Word("bonjour", 0, 0.5)]),
+        RecordingAsr(events),
         RecordingDiarization(events),
         tts=RecordingTts(events),
     )
@@ -53,14 +63,16 @@ def test_diarization_decharge_qwen_apres_acquisition_du_verrou():
         data={"diarize": "true"},
     )
     assert response.status_code == 200
-    assert events[:2] == ["tts:diarization", "diarization:start"]
+    assert events[0] == "tts:transcription"
+    assert "asr:start" in events
+    assert "diarization:start" in events
 
 
-def test_asr_sans_diarization_garde_qwen_charge():
+def test_asr_sans_diarization_decharge_aussi_qwen():
     events = []
     app = create_app(
         Settings(_env_file=None, enable_diarization=False, device="cpu"),
-        StubAsrEngine([Word("bonjour", 0, 0.5)]),
+        RecordingAsr(events),
         RecordingDiarization(events),
         tts=RecordingTts(events),
     )
@@ -69,7 +81,28 @@ def test_asr_sans_diarization_garde_qwen_charge():
         data={"diarize": "false"},
     )
     assert response.status_code == 200
-    assert events == []
+    assert events == ["tts:transcription", "asr:start"]
+
+
+def test_resume_decharge_les_modeles_du_conteneur_avant_ollama():
+    events = []
+
+    class RecordingSummary:
+        name = "summary"
+        def summarize(self, prompt):
+            events.append("summary:start")
+            return "Compte-rendu."
+
+    app = create_app(
+        Settings(_env_file=None, enable_diarization=False, device="cpu"),
+        RecordingAsr(events), RecordingDiarization(events),
+        summary=RecordingSummary(), tts=RecordingTts(events),
+    )
+    response = TestClient(app).post(
+        "/summarize", data={"transcript": "Bonjour", "format": "structure"}
+    )
+    assert response.status_code == 200
+    assert events == ["tts:summary", "asr:cpu", "diarization:cpu", "summary:start"]
 
 
 def test_fabrique_de_production_cree_client_uds_et_registre(tmp_path):

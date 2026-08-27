@@ -151,7 +151,7 @@ def test_transcribe_execute_nemo_dans_le_contexte_de_precision():
 
 
 def test_loader_fp16_conserve_les_poids_et_utilise_autocast(monkeypatch):
-    etat = {"autocast": False}
+    etat = {"autocast": False, "cuda_graphs_disabled": False}
 
     @contextmanager
     def faux_autocast(*args, **kwargs):
@@ -174,6 +174,9 @@ def test_loader_fp16_conserve_les_poids_et_utilise_autocast(monkeypatch):
 
         def eval(self):
             return self
+
+        def disable_cuda_graphs(self):
+            etat["cuda_graphs_disabled"] = True
 
         def transcribe(self, fichiers, timestamps):
             assert etat["autocast"] is True
@@ -210,6 +213,7 @@ def test_loader_fp16_conserve_les_poids_et_utilise_autocast(monkeypatch):
         device="cuda",
         compute_type="float16",
     )
+    assert etat["cuda_graphs_disabled"] is True
 
     audio = np.zeros(16000, dtype=np.float32)
     assert moteur.transcribe(audio, language=None)[0].text == "bonjour"
@@ -251,6 +255,37 @@ def test_sortie_anglaise_est_redecoupee_quand_le_francais_est_demande():
     assert [mot.text for mot in mots] == ["bonjour", "monde"]
     assert [mot.start for mot in mots] == [0.0, 3.0]
     assert appels == 3
+
+
+def test_nemo_est_detruit_puis_recree_sur_cuda_a_l_inference(monkeypatch):
+    deplacements = []
+    rechargements = []
+
+    class ModeleMobile:
+        def to(self, device):
+            deplacements.append(device)
+            return self
+
+        def transcribe(self, fichiers, timestamps):
+            return [_HypotheseNeMo([{"word": "bonjour", "start": 0, "end": 0.5}])]
+
+    module_torch = types.ModuleType("torch")
+    module_torch.device = lambda device: device
+    monkeypatch.setitem(sys.modules, "torch", module_torch)
+    premier = ModeleMobile()
+
+    def recharge():
+        rechargements.append("cuda")
+        return ModeleMobile()
+
+    moteur = NemoParakeetEngine(
+        premier, "nvidia/parakeet", "cuda", reload_model=recharge
+    )
+
+    moteur.release_gpu()
+    assert deplacements == []
+    moteur.transcribe(np.zeros(160, dtype=np.float32), language="fr")
+    assert rechargements == ["cuda"]
 
 
 # --- Diarization pyannote -----------------------------------------------------
@@ -319,6 +354,24 @@ def test_diarize_trie_les_segments(faux_torch):
         SpeakerSegment("SPEAKER_00", 2.0, 3.0),
         SpeakerSegment("SPEAKER_01", 5.0, 6.0),
     ]
+
+
+def test_pyannote_passe_sur_cpu_puis_revient_sur_cuda(faux_torch):
+    deplacements = []
+    faux_torch.device = lambda device: device
+    pipeline = _FauxPipeline([])
+    pipeline.to = lambda device: deplacements.append(device)
+    moteur = PyannoteEngine(pipeline, "pyannote/x", device="cuda")
+
+    moteur.release_gpu()
+    assert deplacements == ["cpu"]
+    moteur.diarize(
+        np.zeros(160, dtype=np.float32),
+        num_speakers=None,
+        min_speakers=None,
+        max_speakers=None,
+    )
+    assert deplacements == ["cpu", "cuda"]
 
 
 def test_diarize_sur_audio_vide_ne_touche_pas_au_pipeline(faux_torch):

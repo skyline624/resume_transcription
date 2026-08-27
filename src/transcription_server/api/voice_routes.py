@@ -122,6 +122,7 @@ async def clone_once(
             )
             try:
                 async with state.gpu_lock:
+                    await state.prepare_tts()
                     result = await state.tts.synthesize(SynthesisRequest(
                         text=input,
                         mode=TtsMode.CLONE,
@@ -162,6 +163,7 @@ async def _reference_text(
     if transcript and transcript.strip():
         return transcript.strip(), "provided"
     async with state.gpu_lock:
+        await state.prepare_transcription()
         result = await run_in_threadpool(
             run_pipeline,
             path=path,

@@ -265,20 +265,15 @@ d'Ollama** — à ne poser qu'en connaissance de cause.
 Mesuré avec `qwen3.8-27b` (Q4_K_M) : **1 min 53** pour une réunion de 51 min,
 **5 min 43** pour une réunion de 110 min (17 400 tokens).
 
-> **Les deux modèles ne tiennent pas ensemble sur 24 Go.** Ollama occupe 17,5 Go
-> et la transcription en demande jusqu'à 21. Appelés l'un après l'autre, ils se
-> séquencent naturellement — la transcription rend sa mémoire avant qu'Ollama
-> charge la sienne. Mais **si Ollama tient encore son modèle quand vous lancez
-> une transcription, celle-ci échouera faute de place**. Deux parades :
->
-> ```powershell
-> ollama stop qwen3.8-27b-unc-32k:latest    # libérer immédiatement
-> $env:OLLAMA_KEEP_ALIVE = "60"             # ou raccourcir la rétention à 60 s
-> ```
->
-> Cela concerne surtout `/summarize` appelé avec `file` : il transcrit puis
-> rédige dans la même requête. Sur une carte plus petite, prenez un modèle de
-> rédaction plus léger.
+> **Les modèles ne tiennent pas ensemble sur 24 Go.** Le serveur sérialise donc
+> tous les travaux GPU. Avant Ollama ou Qwen TTS, Parakeet est détruit et
+> pyannote est placé en RAM ; ils reviennent automatiquement sur CUDA à la
+> transcription suivante. Le premier ASR qui suit doit donc recharger Parakeet
+> depuis le checkpoint local (environ deux minutes sur la configuration de
+> référence). Chaque appel Ollama utilise en plus `keep_alive: 0`, afin que le
+> modèle de rédaction libère ses 17,5 Go dès que la réponse est terminée. Ce
+> cycle évite toute commande `ollama stop` manuelle. Sur une carte plus petite,
+> prenez malgré tout un modèle de rédaction plus léger.
 
 Si Ollama est absent ou le modèle introuvable, `/summarize` répond **503** avec
 un message actionnable — et la transcription, elle, continue de fonctionner.

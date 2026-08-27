@@ -67,6 +67,7 @@ async def create_transcription(
         # Le verrou serialise les travaux GPU ; run_in_threadpool rend la main
         # a la boucle pendant l'inference, donc /health repond toujours.
         async with state.gpu_lock:
+            await state.prepare_transcription()
             result = await run_in_threadpool(
                 run_pipeline,
                 path=path,

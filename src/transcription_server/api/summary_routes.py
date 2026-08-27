@@ -81,6 +81,7 @@ async def summarize(
         path = await _save_upload(file, settings.max_upload_bytes)
         try:
             async with state.gpu_lock:
+                await state.prepare_transcription()
                 resultat = await run_in_threadpool(
                     run_pipeline,
                     path=path,
@@ -114,10 +115,12 @@ async def summarize(
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
     try:
-        # La redaction ne prend pas le verrou GPU : elle se passe hors du
-        # conteneur, dans Ollama. Le bloquer empecherait une transcription de
-        # demarrer pendant les minutes que dure la redaction.
-        texte = await run_in_threadpool(state.summary.summarize, prompt)
+        # Ollama tourne hors du conteneur, mais sur le meme GPU physique. Le
+        # verrou couvre donc aussi sa generation et les poids du conteneur sont
+        # places en RAM avant l'appel.
+        async with state.gpu_lock:
+            await state.prepare_external_gpu("summary")
+            texte = await run_in_threadpool(state.summary.summarize, prompt)
     except SummaryUnavailableError as exc:
         logger.warning("Rédaction indisponible : %s", exc)
         raise HTTPException(status_code=503, detail=str(exc)) from exc

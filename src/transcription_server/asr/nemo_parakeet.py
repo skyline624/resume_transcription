@@ -5,6 +5,7 @@ NeMo et torch sont importes paresseusement, a l'interieur de
 permet aux tests de conformite de signature de tourner sur Windows.
 """
 
+import gc
 import logging
 import re
 import tempfile
@@ -41,15 +42,54 @@ class NemoParakeetEngine:
         model_name: str,
         device: str,
         precision_context: Callable[[], AbstractContextManager] = nullcontext,
+        reload_model: Callable[[], object] | None = None,
     ) -> None:
         self._model = model
         self._name = model_name
         self._device = device
+        self._resident_device = device
         self._precision_context = precision_context
+        self._reload_model = reload_model
 
     @property
     def name(self) -> str:
         return self._name
+
+    def release_gpu(self) -> None:
+        """Detruit le modele reel afin de ne conserver aucune adresse CUDA."""
+        if self._resident_device != "cuda":
+            return
+        import torch
+
+        if self._reload_model is not None:
+            synchronize = getattr(getattr(torch, "cuda", None), "synchronize", None)
+            if synchronize is not None:
+                synchronize()
+            model = self._model
+            self._model = None
+            self._resident_device = "unloaded"
+            del model
+            gc.collect()
+            return
+
+        # Repli pour les adaptateurs construits directement par des clients ou
+        # des tests. La fabrique de production fournit toujours reload_model.
+        self._model = self._model.to(torch.device("cpu"))
+        self._resident_device = "cpu"
+
+    def _ensure_target_device(self) -> None:
+        if self._resident_device == "unloaded":
+            if self._reload_model is None:
+                raise RuntimeError("Le modèle ASR déchargé ne peut pas être recréé.")
+            self._model = self._reload_model()
+            self._resident_device = self._device
+            return
+        if self._resident_device == self._device:
+            return
+        import torch
+
+        self._model = self._model.to(torch.device(self._device))
+        self._resident_device = self._device
 
     def transcribe(self, audio: np.ndarray, language: str | None) -> list[Word]:
         """Rend les mots horodates, en temps relatif au debut de `audio`.
@@ -62,6 +102,7 @@ class NemoParakeetEngine:
         if audio.size == 0:
             return []
 
+        self._ensure_target_device()
         mots = self._transcribe_once(audio)
         texte = " ".join(mot.text for mot in mots)
         francais_demande = bool(language and language.lower().split("-", 1)[0] == "fr")
@@ -163,10 +204,20 @@ def load_nemo_engine(
     import nemo.collections.asr as nemo_asr
     import torch
 
-    logger.info("Chargement du modèle ASR %s…", model_name)
-    model = nemo_asr.models.ASRModel.from_pretrained(model_name=model_name)
-    model = model.to(torch.device(device))
-    model.eval()
+    def build_model():
+        logger.info("Chargement du modèle ASR %s…", model_name)
+        model = nemo_asr.models.ASRModel.from_pretrained(model_name=model_name)
+        model = model.to(torch.device(device))
+        model.eval()
+        # Les graphes CUDA de NeMo capturent des adresses de tenseurs. Même
+        # après recréation, le mode mobile n'a aucun intérêt à les conserver.
+        disable_cuda_graphs = getattr(model, "disable_cuda_graphs", None)
+        if disable_cuda_graphs is not None:
+            disable_cuda_graphs()
+        logger.info("Modèle ASR %s chargé sur %s.", model_name, device)
+        return model
+
+    model = build_model()
 
     @contextmanager
     def precision_context():
@@ -177,10 +228,10 @@ def load_nemo_engine(
             else:
                 yield
 
-    logger.info("Modèle ASR %s chargé sur %s.", model_name, device)
     return NemoParakeetEngine(
         model=model,
         model_name=model_name,
         device=device,
         precision_context=precision_context,
+        reload_model=build_model,
     )

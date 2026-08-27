@@ -41,6 +41,7 @@ async def create_speech(
     chunks: list[bytes] = []
     try:
         async with state.gpu_lock:
+            await state.prepare_tts()
             for segment in segments:
                 request = SynthesisRequest(
                     text=segment.text,
