@@ -1,7 +1,7 @@
 import type { ComponentChildren } from "preact";
 import { vi } from "vitest";
 
-import type { AudioResult, Health, ListResponse, TranscriptionResult, Voice } from "../api/contracts";
+import type { AudioResult, Health, ListResponse, SummaryResult, TranscriptionResult, Voice } from "../api/contracts";
 import { ServicesProvider, type AppServices, type HttpPort } from "../app/services";
 import type { RecorderPort } from "../media/recorder";
 import type { HistoryEntry, HistoryLimits, HistoryRepository } from "../storage/history";
@@ -35,6 +35,7 @@ export function fakeServices(options: FakeOptions = {}) {
     postForm: vi.fn(async (path: string, form: FormData): Promise<unknown> => {
       httpImpl.lastForm = form;
       if (path === "/transcribe") return defaultTranscription();
+      if (path === "/summarize") return defaultSummary();
       return {};
     }),
     postBlob: vi.fn(async (): Promise<AudioResult> => ({
@@ -132,5 +133,13 @@ function defaultTranscription(): TranscriptionResult {
     turns: [],
     timing: { total: 0.5 },
     channels_used: 1,
+  };
+}
+
+function defaultSummary(): SummaryResult {
+  return {
+    summary: "Compte-rendu rédigé.",
+    format: "structure",
+    model: "qwen2.5:7b",
   };
 }

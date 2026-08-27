@@ -1,6 +1,7 @@
 import { useEffect, useState } from "preact/hooks";
 
 import { HealthBar } from "../features/health/HealthBar";
+import { SummaryPage } from "../features/summary/SummaryPage";
 import { TranscriptionPage } from "../features/transcription/TranscriptionPage";
 import { readRoute, routeHref, type RouteName } from "./routes";
 
@@ -78,11 +79,11 @@ export function App() {
           <p>{introductions[route]}</p>
         </div>
         <section class="work-surface" aria-label={`Espace ${active.label}`}>
-          {route === "transcribe" ? (
-            <TranscriptionPage />
-          ) : (
+          {route === "transcribe" ? <TranscriptionPage /> : null}
+          {route === "summarize" ? <SummaryPage /> : null}
+          {route !== "transcribe" && route !== "summarize" ? (
             <p class="empty-guidance">Choisissez une source pour commencer.</p>
-          )}
+          ) : null}
         </section>
       </main>
     </div>
