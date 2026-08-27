@@ -1,4 +1,4 @@
-import { useEffect, useState } from "preact/hooks";
+import { useEffect, useRef, useState } from "preact/hooks";
 
 import { HealthBar } from "../features/health/HealthBar";
 import { HistoryPage } from "../features/history/HistoryPage";
@@ -25,6 +25,7 @@ const introductions: Record<RouteName, string> = {
 };
 
 export function App() {
+  const headingRef = useRef<HTMLHeadingElement>(null);
   const [route, setRoute] = useState<RouteName>(() =>
     readRoute(window.location.hash),
   );
@@ -34,6 +35,10 @@ export function App() {
     window.addEventListener("hashchange", update);
     return () => window.removeEventListener("hashchange", update);
   }, []);
+
+  useEffect(() => {
+    headingRef.current?.focus();
+  }, [route]);
 
   const active = navigation.find((item) => item.route === route) ?? navigation[0]!;
 
@@ -78,7 +83,7 @@ export function App() {
       <main class="workspace">
         <div class="workspace__heading">
           <p class="eyebrow">Outil local</p>
-          <h1 tabIndex={-1}>{active.label}</h1>
+          <h1 ref={headingRef} tabIndex={-1}>{active.label}</h1>
           <p>{introductions[route]}</p>
         </div>
         <section class="work-surface" aria-label={`Espace ${active.label}`}>

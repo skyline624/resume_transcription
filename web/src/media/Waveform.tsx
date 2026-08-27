@@ -20,6 +20,7 @@ export function Waveform({ stream }: WaveformProps) {
     source.connect(analyser);
     const samples = new Uint8Array(analyser.fftSize);
     let frame = 0;
+    const reducedMotion = window.matchMedia?.("(prefers-reduced-motion: reduce)").matches ?? false;
 
     const draw = () => {
       analyser.getByteTimeDomainData(samples);
@@ -34,12 +35,12 @@ export function Waveform({ stream }: WaveformProps) {
         else context.lineTo(x, y);
       });
       context.stroke();
-      frame = requestAnimationFrame(draw);
+      if (!reducedMotion) frame = requestAnimationFrame(draw);
     };
     draw();
 
     return () => {
-      cancelAnimationFrame(frame);
+      if (frame) cancelAnimationFrame(frame);
       source.disconnect();
       void audioContext.close();
     };
