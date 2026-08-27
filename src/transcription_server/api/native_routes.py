@@ -6,14 +6,16 @@ from pathlib import Path
 from typing import Annotated, Literal
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
-from fastapi.responses import PlainTextResponse
+from fastapi.responses import JSONResponse, PlainTextResponse
 from starlette.concurrency import run_in_threadpool
 
 from transcription_server.api.schemas import (
     HealthOut,
+    TtsHealthOut,
     TranscriptionOut,
     result_to_out,
 )
+from transcription_server.tts.domain import TtsUnavailableError
 from transcription_server.audio import AudioDecodeError
 from transcription_server.diarization.engine import NullDiarizationEngine
 from transcription_server.formatting import to_dialogue, to_plain_text, to_srt, to_vtt
@@ -84,9 +86,38 @@ async def _save_upload(upload: UploadFile, max_bytes: int) -> Path:
 
 
 @router.get("/health", response_model=HealthOut)
-async def health(state: Annotated[AppState, Depends(get_state)]) -> HealthOut:
-    return HealthOut(
-        status="ok",
+async def health(
+    state: Annotated[AppState, Depends(get_state)],
+) -> HealthOut | JSONResponse:
+    status = "ok"
+    if state.settings.enable_tts:
+        try:
+            worker = await state.tts.health()
+            tts = TtsHealthOut(
+                enabled=True,
+                worker=worker.available,
+                state=worker.state,
+                downloaded_models=list(worker.downloaded_models),
+                loaded_model=worker.loaded_model,
+                precision=worker.precision,
+                device=worker.device,
+                attention=worker.attention,
+                features=list(worker.features),
+                last_error=worker.last_error,
+                pid=worker.pid,
+            )
+        except TtsUnavailableError as exc:
+            status = "degraded"
+            tts = TtsHealthOut(
+                enabled=True,
+                worker=False,
+                state="error",
+                last_error=exc.code,
+            )
+    else:
+        tts = TtsHealthOut(enabled=False, worker=False, state="disabled")
+    result = HealthOut(
+        status=status,
         device=state.settings.device,
         asr_model=state.asr.name,
         diarization_model=state.diarization.name,
@@ -97,7 +128,11 @@ async def health(state: Annotated[AppState, Depends(get_state)]) -> HealthOut:
         summary_model=state.summary.name,
         summary_enabled=state.settings.enable_summary,
         gpu=state.device_info or None,
+        tts=tts,
     )
+    if status == "degraded":
+        return JSONResponse(status_code=503, content=result.model_dump(mode="json"))
+    return result
 
 
 @router.post("/transcribe", responses={200: {"model": TranscriptionOut}})
@@ -146,6 +181,8 @@ async def transcribe(
         # Le verrou serialise les travaux GPU ; run_in_threadpool rend la main
         # a la boucle pendant l'inference, donc /health repond toujours.
         async with state.gpu_lock:
+            if should_diarize:
+                await state.unload_tts_for_diarization()
             result = await run_in_threadpool(
                 run_pipeline,
                 path=path,

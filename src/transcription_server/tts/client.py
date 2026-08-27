@@ -51,7 +51,7 @@ class AiohttpUnixTransport:
                         body=await response.read(),
                         headers=dict(response.headers),
                     )
-        except (aiohttp.ClientError, TimeoutError, OSError) as exc:
+        except (aiohttp.ClientError, TimeoutError, OSError, NotImplementedError) as exc:
             raise TtsUnavailableError(
                 "worker_unreachable", "Le worker TTS est indisponible."
             ) from exc

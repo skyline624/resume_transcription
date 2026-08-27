@@ -25,7 +25,7 @@ from transcription_server.summary.engine import (
 )
 from transcription_server.state import AppState
 from transcription_server.vad.engine import FixedWindowVadEngine, VadEngine
-from transcription_server.tts.client import TtsClient, UnavailableTtsClient
+from transcription_server.tts.client import TtsClient, UnavailableTtsClient, UnixTtsClient
 from transcription_server.tts.profiles import VoiceProfileRepository
 
 logger = logging.getLogger(__name__)
@@ -154,6 +154,22 @@ def _load_silero_vad_engine(device: str, max_segment_s: float) -> VadEngine:
     return load_silero_vad_engine(device=device, max_segment_s=max_segment_s)
 
 
+def _build_tts_dependencies(
+    settings: Settings,
+) -> tuple[TtsClient, VoiceProfileRepository]:
+    repository = VoiceProfileRepository(settings.voice_store_path)
+    if not settings.enable_tts:
+        return UnavailableTtsClient(), repository
+    return (
+        UnixTtsClient(
+            socket_path=settings.tts_worker_socket,
+            load_timeout_s=settings.tts_load_timeout_s,
+            generation_timeout_s=settings.tts_generation_timeout_s,
+        ),
+        repository,
+    )
+
+
 def build_app(settings: Settings | None = None) -> FastAPI:
     """Construit l'application avec les vrais moteurs charges sur le GPU.
 
@@ -227,6 +243,7 @@ def build_app(settings: Settings | None = None) -> FastAPI:
         summary = UnavailableSummaryEngine()
 
     _warmup(asr, device)
+    tts, voice_profiles = _build_tts_dependencies(settings)
 
     return create_app(
         settings=settings,
@@ -235,6 +252,8 @@ def build_app(settings: Settings | None = None) -> FastAPI:
         summary=summary,
         vad=vad,
         device_info=gpu_info(),
+        tts=tts,
+        voice_profiles=voice_profiles,
     )
 
 

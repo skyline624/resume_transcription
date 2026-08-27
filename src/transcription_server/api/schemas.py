@@ -49,6 +49,21 @@ class HealthOut(BaseModel):
     # dict nu vaudrait dict[Any, Any] : une cle non serialisable y passerait la
     # validation pour ne se manifester qu'a la serialisation, en avertissement.
     gpu: dict[str, Any] | None = None
+    tts: "TtsHealthOut"
+
+
+class TtsHealthOut(BaseModel):
+    enabled: bool
+    worker: bool
+    state: str
+    downloaded_models: list[str] = Field(default_factory=list)
+    loaded_model: str | None = None
+    precision: str | None = None
+    device: str | None = None
+    attention: str | None = None
+    features: list[str] = Field(default_factory=list)
+    last_error: str | None = None
+    pid: int | None = None
 
 
 def turn_to_out(turn: Turn, include_words: bool) -> TurnOut:

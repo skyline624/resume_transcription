@@ -33,6 +33,10 @@ class AppState:
     # application ne doit pas servir deux boucles distinctes.
     gpu_lock: asyncio.Lock = field(default_factory=asyncio.Lock)
 
+    async def unload_tts_for_diarization(self) -> None:
+        if self.settings.enable_tts:
+            await self.tts.unload(reason="diarization")
+
 
 def get_state(request: Request) -> AppState:
     """Dependance FastAPI : rend l'etat attache a l'application."""

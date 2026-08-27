@@ -212,7 +212,12 @@ def test_un_warmup_qui_echoue_ne_bloque_pas_le_demarrage(monkeypatch):
         app_module, "_load_nemo_engine", lambda **kw: AsrQuiExplose()
     )
     application = app_module.build_app(
-        Settings(_env_file=None, enable_diarization=False, device="cuda")
+        Settings(
+            _env_file=None,
+            enable_diarization=False,
+            enable_tts=False,
+            device="cuda",
+        )
     )
     assert TestClient(application).get("/health").status_code == 200
 
