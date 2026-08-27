@@ -521,6 +521,19 @@ h1 {
   padding-left: var(--space-5);
 }
 
+.turn-list--primary {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.turn-list--primary li {
+  background: var(--mist);
+  border-left: 3px solid var(--petrol);
+  border-radius: 0 var(--radius) var(--radius) 0;
+  padding: var(--space-3) var(--space-4);
+}
+
 .turn-list li span {
   font-family: var(--font-data);
   font-size: 0.76rem;
@@ -536,6 +549,10 @@ h1 {
 
 .turn-list p {
   margin: var(--space-1) 0 0;
+}
+
+.continuous-transcript .transcript-text {
+  margin-top: var(--space-3);
 }
 
 .result-actions {

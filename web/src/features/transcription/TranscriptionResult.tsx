@@ -21,11 +21,12 @@ export function TranscriptionResult({ result, historyId }: { result: Result; his
         </div>
         <span class="data-badge">{formatSeconds(result.duration)}</span>
       </div>
-      <p class="transcript-text">{result.text}</p>
       {result.turns.length > 0 ? (
-        <details>
-          <summary>{result.turns.length} tour(s) de parole</summary>
-          <ol class="turn-list">
+        <>
+          <ol
+            aria-label="Transcription par locuteur"
+            class="turn-list turn-list--primary"
+          >
             {result.turns.map((turn, index) => (
               <li key={`${turn.start}-${index}`}>
                 <span>{turn.speaker ?? "Voix"}</span>
@@ -34,10 +35,16 @@ export function TranscriptionResult({ result, historyId }: { result: Result; his
               </li>
             ))}
           </ol>
-        </details>
-      ) : null}
+          <details class="continuous-transcript">
+            <summary>Texte continu</summary>
+            <p class="transcript-text">{result.text}</p>
+          </details>
+        </>
+      ) : (
+        <p class="transcript-text">{result.text}</p>
+      )}
       <div class="result-actions" aria-label="Exports">
-        <Button onClick={() => void navigator.clipboard?.writeText(result.text)}>Copier</Button>
+        <Button onClick={() => void navigator.clipboard?.writeText(toDialogue(result))}>Copier</Button>
         <Button onClick={() => downloadText(`${baseName}.txt`, toText(result), "text/plain;charset=utf-8")}>Texte</Button>
         <Button onClick={() => downloadText(`${baseName}-dialogue.txt`, toDialogue(result), "text/plain;charset=utf-8")}>Dialogue</Button>
         <Button onClick={() => downloadText(`${baseName}.srt`, toSrt(result), "application/x-subrip")}>SRT</Button>
