@@ -13,6 +13,7 @@ services:
       # Cache des poids HuggingFace : evite de retelecharger 2,6 Go a chaque
       # reconstruction, et garde le token hors des couches de l'image.
       - ./models:/app/models
+      - tts-voices:/app/voices
     deploy:
       resources:
         reservations:
@@ -26,6 +27,9 @@ services:
       timeout: 10s
       # Le premier demarrage telecharge ~2,6 Go de poids : sans cette fenetre,
       # Compose declarerait le conteneur en echec avant qu'il ait fini.
-      start_period: 600s
+      start_period: 1800s
       retries: 3
     restart: unless-stopped
+
+volumes:
+  tts-voices:

@@ -8,9 +8,11 @@ FROM pytorch/pytorch:2.11.0-cuda12.8-cudnn9-runtime
 # curl pour le healthcheck de Compose.
 RUN apt-get update && apt-get install -y --no-install-recommends \
         ffmpeg \
+        sox \
         libsndfile1 \
         git \
         curl \
+        python3.12-venv \
     && rm -rf /var/lib/apt/lists/*
 
 ENV PYTHONUNBUFFERED=1 \
@@ -28,6 +30,12 @@ ENV PIP_BREAK_SYSTEM_PACKAGES=1
 
 WORKDIR /app
 
+# Les deux piles partagent le torch CUDA de l'image, mais leurs paquets Python
+# locaux restent isolés. Le Transformers 4.57.3 du worker prend ainsi priorité
+# sur la version utilisée par NeMo sans pouvoir la remplacer.
+RUN python -m venv --system-site-packages /opt/venv-main \
+    && python -m venv --system-site-packages /opt/venv-qwen
+
 COPY docker/pin_torch.py /tmp/pin_torch.py
 RUN python /tmp/pin_torch.py /tmp/constraints.txt
 
@@ -40,14 +48,23 @@ COPY pyproject.toml README.md ./
 # NeMo pour un caractere.
 COPY src/transcription_server/__init__.py ./src/transcription_server/__init__.py
 
-RUN pip install --no-cache-dir -c /tmp/constraints.txt -e ".[gpu,dev]"
+RUN /opt/venv-main/bin/pip install --no-cache-dir -c /tmp/constraints.txt -e ".[gpu,dev]"
+
+COPY docker/requirements-qwen.txt /tmp/requirements-qwen.txt
+RUN /opt/venv-qwen/bin/pip install --no-cache-dir -r /tmp/requirements-qwen.txt
+
+COPY qwen_worker/pyproject.toml ./qwen_worker/pyproject.toml
+COPY qwen_worker/src/qwen_tts_worker/__init__.py ./qwen_worker/src/qwen_tts_worker/__init__.py
+RUN /opt/venv-qwen/bin/pip install --no-cache-dir --no-deps -e ./qwen_worker
 
 COPY src/ ./src/
+COPY qwen_worker/src/ ./qwen_worker/src/
 
 # Verification au build : si l'installation de NeMo ou pyannote a remplace le
 # torch CUDA par une roue CPU, autant l'apprendre maintenant qu'au premier
 # demarrage sur la machine de l'utilisateur.
-RUN python -c "import torch; assert torch.version.cuda, 'torch a perdu CUDA pendant pip install'; print('torch', torch.__version__, 'CUDA', torch.version.cuda)"
+RUN /opt/venv-main/bin/python -c "import nemo, torch; assert torch.version.cuda, 'torch a perdu CUDA'; print('main torch', torch.__version__, 'CUDA', torch.version.cuda)" \
+    && /opt/venv-qwen/bin/python -c "import qwen_tts, transformers; assert transformers.__version__ == '4.57.3'; print('qwen transformers', transformers.__version__)"
 
 COPY tests/ ./tests/
 
@@ -61,4 +78,4 @@ RUN sed -i 's/\r$//' /usr/local/bin/entrypoint.sh \
 ENTRYPOINT ["/usr/local/bin/entrypoint.sh"]
 # Indispensable : l'entrypoint fait `exec "$@"` sous `set -u`, donc un
 # `docker run` sans commande echouerait sur une variable non liee.
-CMD ["python", "-m", "transcription_server.main"]
+CMD ["/opt/venv-main/bin/python", "-m", "transcription_server.main"]
