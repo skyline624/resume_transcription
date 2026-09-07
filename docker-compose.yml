@@ -5,6 +5,8 @@ services:
       dockerfile: docker/Dockerfile
     image: transcription-parakeet:latest
     env_file: .env
+    environment:
+      NEMO_EXTRACTED_CACHE_DIR: /app/nemo-cache
     # 127.0.0.1 uniquement : le serveur n'est pas joignable depuis le reseau
     # local. L'exposer plus largement exigerait d'ajouter une authentification.
     ports:
@@ -13,6 +15,8 @@ services:
       # Cache des poids HuggingFace : evite de retelecharger 2,6 Go a chaque
       # reconstruction, et garde le token hors des couches de l'image.
       - ./models:/app/models
+      # Checkpoint Parakeet extrait une fois, sur le disque Linux de Docker.
+      - nemo-extracted:/app/nemo-cache
       - tts-voices:/app/voices
     deploy:
       resources:
@@ -32,4 +36,5 @@ services:
     restart: unless-stopped
 
 volumes:
+  nemo-extracted:
   tts-voices:

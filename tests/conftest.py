@@ -32,6 +32,7 @@ from transcription_server.config import get_settings
 # injecte les entrees de son env_file comme variables d'environnement, et
 # os.environ prime sur le dotenv : le cas n'a rien de theorique.
 VARIABLES_DE_CONFIGURATION = (
+    "NEMO_EXTRACTED_CACHE_DIR",
     "HF_TOKEN",
     "ASR_MODEL",
     "DIARIZATION_MODEL",

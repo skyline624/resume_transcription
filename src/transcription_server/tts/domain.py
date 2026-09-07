@@ -4,6 +4,11 @@ from dataclasses import dataclass, field
 from enum import StrEnum
 from pathlib import Path
 
+CUSTOM_VOICE_SPEAKERS = (
+    "Vivian", "Serena", "Uncle_Fu", "Dylan", "Eric",
+    "Ryan", "Aiden", "Ono_Anna", "Sohee",
+)
+
 
 class TtsMode(StrEnum):
     CUSTOM_VOICE = "qwen3-tts-custom-voice"

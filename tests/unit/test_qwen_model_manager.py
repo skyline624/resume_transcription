@@ -1,5 +1,6 @@
 import pytest
 import threading
+import weakref
 from concurrent.futures import ThreadPoolExecutor
 
 from qwen_tts_worker.domain import GenerateCommand, Mode, WorkerModelError
@@ -164,3 +165,36 @@ def fake_clock():
         def __call__(self):
             return self.value
     return Clock()
+
+
+@pytest.mark.parametrize("operation", ["generate", "stream", "load"])
+def test_error_releases_model_before_cuda_cleanup(operation):
+    refs = []
+    alive_at_cleanup = []
+
+    class FailingModel:
+        def generate(self, command):
+            raise RuntimeError("backend failure")
+
+        def stream(self, command):
+            yield from ()
+            raise RuntimeError("backend failure")
+
+    def loader(mode, model_id):
+        model = FailingModel()
+        refs.append(weakref.ref(model))
+        if operation == "load":
+            raise RuntimeError("load failure after allocation")
+        return model
+
+    manager = QwenModelManager(
+        {Mode.CUSTOM: "custom"}, loader,
+        lambda: alive_at_cleanup.append(any(ref() is not None for ref in refs)), 300,
+    )
+    with pytest.raises(WorkerModelError):
+        if operation == "stream":
+            list(manager.stream(command(Mode.CUSTOM)))
+        else:
+            manager.generate(command(Mode.CUSTOM))
+    assert alive_at_cleanup == [False]
+    assert all(ref() is None for ref in refs)

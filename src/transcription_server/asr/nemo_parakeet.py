@@ -7,6 +7,7 @@ permet aux tests de conformite de signature de tourner sur Windows.
 
 import gc
 import logging
+import os
 import re
 import tempfile
 import wave
@@ -206,7 +207,23 @@ def load_nemo_engine(
 
     def build_model():
         logger.info("Chargement du modèle ASR %s…", model_name)
-        model = nemo_asr.models.ASRModel.from_pretrained(model_name=model_name)
+        cache_root = os.environ.get("NEMO_EXTRACTED_CACHE_DIR")
+        if cache_root:
+            from nemo.core.connectors.save_restore_connector import SaveRestoreConnector
+            from transcription_server.asr.nemo_cache import extracted_checkpoint
+
+            archive = Path(nemo_asr.models.ASRModel.from_pretrained(
+                model_name=model_name, return_model_file=True,
+            ))
+            connector = SaveRestoreConnector()
+            connector.model_extracted_dir = str(
+                archive if archive.is_dir() else extracted_checkpoint(archive, Path(cache_root))
+            )
+            model = nemo_asr.models.ASRModel.restore_from(
+                restore_path=str(archive), save_restore_connector=connector,
+            )
+        else:
+            model = nemo_asr.models.ASRModel.from_pretrained(model_name=model_name)
         model = model.to(torch.device(device))
         model.eval()
         # Les graphes CUDA de NeMo capturent des adresses de tenseurs. Même

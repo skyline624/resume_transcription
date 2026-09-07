@@ -74,6 +74,19 @@ def test_alias_openai_utilise_custom_voice_en_francais(tts_client):
     assert tts.requests[0].language == "fr"
 
 
+@pytest.mark.parametrize("stream", [False, True])
+@pytest.mark.parametrize("voice", ["verse", "alloy", "unknown"])
+def test_unknown_custom_voice_is_rejected_before_gpu_work(tts_client, stream, voice):
+    client, tts = tts_client
+    response = client.post("/v1/audio/speech", json={
+        "model": "qwen3-tts-custom-voice", "input": "Bonjour", "voice": voice,
+        "stream": stream, "response_format": "pcm",
+    })
+    assert response.status_code == 422
+    assert "Ryan" in response.text
+    assert tts.requests == []
+
+
 def test_stream_rend_du_pcm_sans_attendre_un_fichier_wav(tts_client):
     client, tts = tts_client
     response = client.post("/v1/audio/speech", json={

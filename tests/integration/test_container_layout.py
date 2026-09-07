@@ -17,7 +17,9 @@ def test_compose_publie_uniquement_api_principale_et_persiste_les_voix():
     service = compose["services"]["transcription"]
     assert service["ports"] == ["127.0.0.1:8000:8000"]
     assert "tts-voices:/app/voices" in service["volumes"]
-    assert compose["volumes"] == {"tts-voices": None}
+    assert "nemo-extracted:/app/nemo-cache" in service["volumes"]
+    assert service["environment"]["NEMO_EXTRACTED_CACHE_DIR"] == "/app/nemo-cache"
+    assert compose["volumes"] == {"tts-voices": None, "nemo-extracted": None}
 
 
 def test_qwen_possede_un_fichier_de_versions_independant():

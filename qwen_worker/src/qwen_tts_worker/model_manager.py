@@ -1,14 +1,31 @@
 """Cycle de vie d'au plus un checkpoint Qwen en VRAM."""
 
 import gc
+import logging
 import os
 import threading
 import time
+import traceback
 from collections.abc import Callable
 from contextlib import closing
 from typing import Any
 
 from qwen_tts_worker.domain import GenerateCommand, Mode, WorkerModelError
+
+logger = logging.getLogger(__name__)
+
+
+def _release_exception_frames(exc: BaseException) -> None:
+    """Drop failed backend frames before collecting tensors and CUDA graphs."""
+    pending = [exc]
+    visited = set()
+    while pending:
+        current = pending.pop()
+        if id(current) in visited:
+            continue
+        visited.add(id(current))
+        traceback.clear_frames(current.__traceback__)
+        pending.extend(e for e in (current.__cause__, current.__context__) if e is not None)
 
 
 class QwenModelManager:
@@ -42,6 +59,8 @@ class QwenModelManager:
             try:
                 waveform, sample_rate = self._model.generate(command)
             except Exception as exc:
+                logger.exception("Qwen generation failed (mode=%s)", command.mode.value)
+                _release_exception_frames(exc)
                 code = "cuda_oom" if "out of memory" in str(exc).lower() else "generation_failed"
                 self._last_error = code
                 self._unload_locked(final_state="error")
@@ -64,6 +83,8 @@ class QwenModelManager:
                 with closing(self._model.stream(command)) as chunks:
                     yield from chunks
             except Exception as exc:
+                logger.exception("Qwen streaming failed (mode=%s)", command.mode.value)
+                _release_exception_frames(exc)
                 code = "cuda_oom" if "out of memory" in str(exc).lower() else "generation_failed"
                 self._last_error = code
                 self._unload_locked(final_state="error")
@@ -109,6 +130,8 @@ class QwenModelManager:
             self._state = "ready"
             self._last_error = None
         except Exception as exc:
+            logger.exception("Qwen loading failed (mode=%s)", mode.value)
+            _release_exception_frames(exc)
             self._last_error = "model_load_failed"
             self._unload_locked(final_state="error")
             raise WorkerModelError("model_load_failed", "Le modèle Qwen n'a pas pu être chargé.") from exc
@@ -120,9 +143,9 @@ class QwenModelManager:
         self._model = None
         self._mode = None
         self._last_used = None
-        if had_model:
-            gc.collect()
-            self._cuda_cleanup()
+        # A loader can allocate GPU tensors before assigning self._model.
+        gc.collect()
+        self._cuda_cleanup()
         self._state = final_state
 
 

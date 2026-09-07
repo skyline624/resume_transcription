@@ -2,7 +2,7 @@
 
 from pydantic import BaseModel, Field, model_validator
 
-from transcription_server.tts.domain import AudioFormat, TtsMode
+from transcription_server.tts.domain import AudioFormat, TtsMode, CUSTOM_VOICE_SPEAKERS
 
 _ALIASES = {
     "tts-1": TtsMode.CUSTOM_VOICE,
@@ -37,6 +37,10 @@ class SpeechRequest(BaseModel):
         mode = resolve_model_alias(self.model)
         if mode in (TtsMode.CUSTOM_VOICE, TtsMode.CLONE) and not self.voice:
             raise ValueError("voice est requis pour ce mode.")
+        if mode is TtsMode.CUSTOM_VOICE:
+            speakers = {name.lower(): name for name in CUSTOM_VOICE_SPEAKERS}
+            if self.voice.lower() not in speakers:
+                raise ValueError("Voix Qwen inconnue. Voix disponibles : " + ", ".join(CUSTOM_VOICE_SPEAKERS))
         if mode is TtsMode.VOICE_DESIGN and not self.instructions:
             raise ValueError("instructions est requis pour VoiceDesign.")
         if mode is TtsMode.CLONE and self.instructions:

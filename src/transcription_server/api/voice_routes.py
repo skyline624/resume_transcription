@@ -14,7 +14,7 @@ from transcription_server.tts.text import segment_text
 from transcription_server.pipeline import TranscriptionRequest, run_pipeline
 from transcription_server.state import AppState, get_state
 from transcription_server.tts.audio_output import AudioRenderError, render_output
-from transcription_server.tts.domain import AudioFormat, SynthesisRequest, TtsMode, TtsUnavailableError
+from transcription_server.tts.domain import AudioFormat, SynthesisRequest, TtsMode, TtsUnavailableError, CUSTOM_VOICE_SPEAKERS
 from transcription_server.tts.profiles import VoiceNotFoundError
 from transcription_server.tts.reference import (
     InvalidReferenceError,
@@ -23,10 +23,7 @@ from transcription_server.tts.reference import (
 )
 
 router = APIRouter(prefix="/v1")
-BUILTIN_VOICES = (
-    "Vivian", "Serena", "Uncle_Fu", "Dylan", "Eric",
-    "Ryan", "Aiden", "Ono_Anna", "Sohee",
-)
+BUILTIN_VOICES = CUSTOM_VOICE_SPEAKERS
 
 
 @router.post("/voices", status_code=201)
