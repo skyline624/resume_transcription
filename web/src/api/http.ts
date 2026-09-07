@@ -97,6 +97,49 @@ export class HttpClient {
     await ensureSuccess(response);
   }
 
+  async postStream(
+    path: string, body: unknown, onChunk: (chunk: Uint8Array) => void, init?: RequestInit,
+  ): Promise<AudioResult> {
+    const headers = new Headers(init?.headers);
+    const isForm = body instanceof FormData;
+    if (isForm) headers.delete("content-type");
+    else headers.set("content-type", "application/json");
+    const response = await this.fetcher.call(globalThis, this.url(path), {
+      ...init, method: "POST", headers, body: isForm ? body : JSON.stringify(body),
+    });
+    await ensureSuccess(response);
+    if (!response.body || response.headers.get("x-audio-sample-rate") !== "24000" ||
+        response.headers.get("content-type")?.split(";")[0] !== "audio/pcm") {
+      await response.body?.cancel();
+      throw new Error("Le format du flux audio est invalide.");
+    }
+    const reader = response.body.getReader();
+    const chunks: Uint8Array[] = [];
+    let size = 0;
+    try {
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        if (value.length) { chunks.push(value); size += value.length; onChunk(value); }
+      }
+    } catch (error) {
+      await reader.cancel().catch(() => undefined);
+      throw error;
+    } finally { reader.releaseLock(); }
+    if (!size || size % 2) throw new Error("Le flux audio est incomplet.");
+    const wav = new Uint8Array(44 + size);
+    const view = new DataView(wav.buffer);
+    const label = (offset: number, text: string) => wav.set(new TextEncoder().encode(text), offset);
+    label(0, "RIFF"); view.setUint32(4, 36 + size, true); label(8, "WAVE");
+    label(12, "fmt "); view.setUint32(16, 16, true); view.setUint16(20, 1, true);
+    view.setUint16(22, 1, true); view.setUint32(24, 24000, true); view.setUint32(28, 48000, true);
+    view.setUint16(32, 2, true); view.setUint16(34, 16, true);
+    label(36, "data"); view.setUint32(40, size, true);
+    let offset = 44;
+    for (const chunk of chunks) { wav.set(chunk, offset); offset += chunk.length; }
+    return { blob: new Blob([wav.buffer], { type: "audio/wav" }), contentType: "audio/wav", filename: "speech.wav" };
+  }
+
   private async requestJson<T>(path: string, init: RequestInit): Promise<T> {
     const response = await this.fetcher.call(globalThis, this.url(path), init);
     await ensureSuccess(response);

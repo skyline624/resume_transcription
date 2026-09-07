@@ -3,11 +3,12 @@
 from typing import Annotated
 from pathlib import Path
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import Response
 from starlette.concurrency import run_in_threadpool
 
 from transcription_server.api.tts_schemas import SpeechRequest
+from transcription_server.api.tts_streaming import pcm_response
 from transcription_server.state import AppState, get_state
 from transcription_server.tts.audio_output import AudioRenderError, render_output
 from transcription_server.tts.domain import SynthesisRequest, TtsMode, TtsUnavailableError
@@ -21,6 +22,7 @@ _SEGMENT_MAX_CHARS = 500
 @router.post("/audio/speech")
 async def create_speech(
     body: SpeechRequest,
+    http_request: Request,
     state: Annotated[AppState, Depends(get_state)],
 ) -> Response:
     if not state.settings.enable_tts:
@@ -40,6 +42,16 @@ async def create_speech(
     segments = segment_text(body.input, _SEGMENT_MAX_CHARS)
     chunks: list[bytes] = []
     try:
+        if body.stream:
+            return await pcm_response(state, (
+                (SynthesisRequest(
+                    text=segment.text, mode=body.mode, language=body.language,
+                    voice=body.voice if body.mode is TtsMode.CUSTOM_VOICE else None,
+                    instructions=body.instructions,
+                    reference_path=Path(profile.audio_path) if profile else None,
+                    reference_text=profile.transcript if profile else None,
+                ), segment.pause_after_ms) for segment in segments
+            ), http_request=http_request)
         async with state.gpu_lock:
             await state.prepare_tts()
             for segment in segments:

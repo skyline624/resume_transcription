@@ -57,9 +57,13 @@ def create_worker_app(
         finally:
             task.cancel()
             await asyncio.gather(task, return_exceptions=True)
+            for job in list(getattr(app.state, "stream_jobs", {}).values()):
+                await job.close()
             await asyncio.to_thread(manager.unload)
 
     app = FastAPI(lifespan=lifespan)
+    from qwen_tts_worker.streaming import register_stream_routes
+    register_stream_routes(app, manager, GeneratePayload)
 
     @app.get("/health")
     async def health():

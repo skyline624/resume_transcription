@@ -2,6 +2,8 @@ import io
 import struct
 import wave
 
+import pytest
+
 from fastapi.testclient import TestClient
 
 from transcription_server.app import _build_tts_dependencies, create_app
@@ -53,7 +55,7 @@ class RecordingDiarization:
 def test_diarization_decharge_qwen_apres_acquisition_du_verrou():
     events = []
     app = create_app(
-        Settings(_env_file=None, enable_diarization=False, device="cpu"),
+        Settings(_env_file=None, enable_diarization=False, device="cpu", enable_lazy_gpu=False),
         RecordingAsr(events),
         RecordingDiarization(events),
         tts=RecordingTts(events),
@@ -71,7 +73,7 @@ def test_diarization_decharge_qwen_apres_acquisition_du_verrou():
 def test_asr_sans_diarization_decharge_aussi_qwen():
     events = []
     app = create_app(
-        Settings(_env_file=None, enable_diarization=False, device="cpu"),
+        Settings(_env_file=None, enable_diarization=False, device="cpu", enable_lazy_gpu=False),
         RecordingAsr(events),
         RecordingDiarization(events),
         tts=RecordingTts(events),
@@ -82,6 +84,25 @@ def test_asr_sans_diarization_decharge_aussi_qwen():
     )
     assert response.status_code == 200
     assert events == ["tts:transcription", "asr:start"]
+
+
+@pytest.mark.parametrize("idle_s", [0, 900])
+async def test_lazy_conserve_les_modeles_entre_stt_et_tts(idle_s):
+    events = []
+    app = create_app(
+        Settings(
+            _env_file=None, enable_diarization=False, device="cpu",
+            enable_lazy_gpu=True, gpu_idle_unload_s=idle_s,
+        ),
+        RecordingAsr(events), RecordingDiarization(events),
+        tts=RecordingTts(events),
+    )
+    state = app.state.app_state
+    async with state.gpu_lock:
+        await state.prepare_transcription()
+        await state.prepare_tts()
+        await state.prepare_transcription()
+    assert events == []
 
 
 def test_resume_decharge_les_modeles_du_conteneur_avant_ollama():

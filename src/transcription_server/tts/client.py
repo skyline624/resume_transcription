@@ -1,6 +1,7 @@
 """Client privé du worker Qwen via un socket Unix."""
 
 import json
+from collections.abc import AsyncIterator
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Protocol
@@ -29,10 +30,16 @@ class WorkerTransport(Protocol):
         self, method: str, path: str, payload: dict | None, timeout_s: float
     ) -> TransportResponse: ...
 
+    def stream(self, payload: dict, timeout_s: float) -> AsyncIterator[bytes]: ...
+
 
 class AiohttpUnixTransport:
     def __init__(self, socket_path: Path) -> None:
         self._socket_path = socket_path
+
+    def stream(self, payload: dict, timeout_s: float) -> AsyncIterator[bytes]:
+        from transcription_server.tts.streaming_client import stream_worker
+        return stream_worker(self._socket_path, payload, timeout_s)
 
     async def request(
         self, method: str, path: str, payload: dict | None, timeout_s: float
@@ -59,6 +66,7 @@ class AiohttpUnixTransport:
 
 class TtsClient(Protocol):
     async def synthesize(self, request: SynthesisRequest) -> SynthesisResult: ...
+    def stream(self, request: SynthesisRequest) -> AsyncIterator[bytes]: ...
     async def health(self) -> WorkerHealth: ...
     async def unload(self, reason: str) -> None: ...
 
@@ -75,8 +83,9 @@ class UnixTtsClient:
         self._generation_timeout_s = generation_timeout_s
         self._transport = transport or AiohttpUnixTransport(socket_path)
 
-    async def synthesize(self, request: SynthesisRequest) -> SynthesisResult:
-        payload = {
+    @staticmethod
+    def _payload(request: SynthesisRequest) -> dict:
+        return {
             "mode": request.mode.value,
             "text": request.text,
             "language": _QWEN_LANGUAGES.get(request.language, request.language),
@@ -87,6 +96,12 @@ class UnixTtsClient:
             ),
             "reference_text": request.reference_text,
         }
+
+    def stream(self, request: SynthesisRequest) -> AsyncIterator[bytes]:
+        return self._transport.stream(self._payload(request), self._generation_timeout_s)
+
+    async def synthesize(self, request: SynthesisRequest) -> SynthesisResult:
+        payload = self._payload(request)
         response = await self._transport.request(
             "POST", "/generate", payload, self._generation_timeout_s
         )
@@ -157,6 +172,10 @@ class UnixTtsClient:
 
 
 class UnavailableTtsClient:
+    async def stream(self, request: SynthesisRequest) -> AsyncIterator[bytes]:
+        raise TtsUnavailableError("tts_disabled", "La synthese vocale est desactivee.")
+        yield b""
+
     async def synthesize(self, request: SynthesisRequest) -> SynthesisResult:
         raise TtsUnavailableError("tts_disabled", "La synthèse vocale est désactivée.")
 

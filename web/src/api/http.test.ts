@@ -7,6 +7,26 @@ function response(body: BodyInit | null, init: ResponseInit): Response {
 }
 
 describe("HttpClient", () => {
+  it("delivers PCM before the response ends and assembles a downloadable WAV", async () => {
+    let controller!: ReadableStreamDefaultController<Uint8Array>;
+    const stream = new ReadableStream<Uint8Array>({ start(value) { controller = value; } });
+    const fetcher = vi.fn<typeof fetch>().mockResolvedValue(response(stream, {
+      status: 200, headers: { "content-type": "audio/pcm", "x-audio-sample-rate": "24000" },
+    }));
+    const chunk = vi.fn();
+    const result = new HttpClient("", fetcher).postStream("/v1/audio/speech", {}, chunk);
+    controller.enqueue(new Uint8Array([0, 128, 255]));
+    await vi.waitFor(() => expect(chunk).toHaveBeenCalledTimes(1));
+    controller.enqueue(new Uint8Array([127]));
+    controller.close();
+    const audio = await result;
+    const wav = new Uint8Array(await audio.blob.arrayBuffer());
+    expect(new TextDecoder().decode(wav.slice(0, 4))).toBe("RIFF");
+    expect(new DataView(wav.buffer).getUint32(24, true)).toBe(24000);
+    expect([...wav.slice(44)]).toEqual([0, 128, 255, 127]);
+    expect(audio.filename).toBe("speech.wav");
+  });
+
   it("invokes fetch with the browser global as its receiver", async () => {
     const receiverAwareFetch = function (this: unknown): Promise<Response> {
       if (this !== globalThis) throw new TypeError("Illegal invocation");

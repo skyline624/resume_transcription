@@ -7,10 +7,12 @@ import type { AudioSelection } from "../../media/recorder";
 import { Button } from "../../ui/Button";
 import { OperationStatus } from "../../ui/OperationStatus";
 import { SpeechResult } from "./SpeechResult";
-import { cloneOnce } from "./speech-api";
+import { cloneOnce, cloneOnceStream } from "./speech-api";
+import { useLivePlayback } from "../../media/useLivePlayback";
 
 export function OneShotClone() {
   const { http, history, recorderFactory } = useServices();
+  const live = useLivePlayback();
   const [reference, setReference] = useState<AudioSelection | null>(null);
   const [referenceValid, setReferenceValid] = useState(false);
   const [input, setInput] = useState("");
@@ -26,14 +28,14 @@ export function OneShotClone() {
   const [error, setError] = useState<string | null>(null);
   const canSubmit = referenceValid && consent && input.trim().length > 0 && !pending;
 
-  const submit = async (event: Event) => {
+  const submit = async (event: Event, streaming = false) => {
     event.preventDefault();
     if (!reference || !canSubmit) return;
     setPending(true);
     setStartedAt(Date.now());
     setError(null);
     try {
-      const audio = await cloneOnce(http, {
+      const request = {
         reference,
         input,
         consent,
@@ -41,11 +43,14 @@ export function OneShotClone() {
         language,
         responseFormat,
         speed,
-      });
+      };
+      const audio = streaming
+        ? await live.play((onChunk, signal) => cloneOnceStream(http, request, onChunk, signal))
+        : await cloneOnce(http, request);
       const entry = await history.add({
         kind: "speech",
         title: input.slice(0, 60),
-        parameters: { mode: "clone-once", language, responseFormat, speed },
+        parameters: { mode: "clone-once", language, responseFormat: streaming ? "wav" : responseFormat, speed },
         resultText: input,
         metadata: {},
       });
@@ -56,6 +61,7 @@ export function OneShotClone() {
       setReferenceValid(false);
       setTranscript("");
     } catch (reason) {
+      if (reason instanceof Error && reason.name === "AbortError") return;
       setError(reason instanceof Error ? reason.message : "Le clonage ponctuel a échoué.");
     } finally {
       setPending(false);
@@ -94,6 +100,9 @@ export function OneShotClone() {
         <OperationStatus active={pending} label="Clonage et synthèse en cours" startedAt={startedAt} />
         {error ? <p class="field__error" role="alert">{error}</p> : null}
         <Button disabled={!canSubmit} type="submit" variant="primary">Cloner et synthétiser</Button>
+        <Button disabled={!canSubmit || speed !== 1} type="button" onClick={(event) => void submit(event, true)}>Écouter le clone en direct</Button>
+        {live.active ? <Button type="button" onClick={live.stop}>Arrêter</Button> : null}
+        <p class="field__hint">Lecture progressive à vitesse normale, avec un résultat en WAV.</p>
       </form>
       {result && historyId ? <SpeechResult audio={result} history={history} historyId={historyId} /> : null}
     </details>

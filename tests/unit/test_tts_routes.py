@@ -31,6 +31,11 @@ class FakeTts:
         self.requests.append(request)
         return SynthesisResult(wav_bytes(), 24000, request.mode.value)
 
+    async def stream(self, request):
+        self.requests.append(request)
+        yield b"\x01\x00\x02\x00"
+        yield b"\x03\x00"
+
     async def unload(self, reason):
         return None
 
@@ -67,6 +72,42 @@ def test_alias_openai_utilise_custom_voice_en_francais(tts_client):
     assert response.headers["content-type"].startswith("audio/wav")
     assert tts.requests[0].mode is TtsMode.CUSTOM_VOICE
     assert tts.requests[0].language == "fr"
+
+
+def test_stream_rend_du_pcm_sans_attendre_un_fichier_wav(tts_client):
+    client, tts = tts_client
+    response = client.post("/v1/audio/speech", json={
+        "input": "Bonjour", "voice": "Ryan", "stream": True, "response_format": "pcm",
+    })
+    assert response.status_code == 200
+    assert response.content == b"\x01\x00\x02\x00\x03\x00"
+    assert response.headers["x-audio-sample-rate"] == "24000"
+    assert len(tts.requests) == 1
+    assert not client.app.state.app_state.gpu_lock.locked()
+
+
+@pytest.mark.parametrize("options", [{"response_format": "mp3"}, {"response_format": "pcm", "speed": 2}])
+def test_stream_refuse_format_ou_vitesse_incompatible(tts_client, options):
+    client, tts = tts_client
+    response = client.post("/v1/audio/speech", json={
+        "input": "Bonjour", "voice": "Ryan", "stream": True, **options,
+    })
+    assert response.status_code == 422
+    assert tts.requests == []
+
+
+def test_erreur_avant_premier_audio_ne_renvoie_pas_un_faux_200(tts_client):
+    from transcription_server.tts.domain import TtsUnavailableError
+    client, tts = tts_client
+    async def fail(request):
+        raise TtsUnavailableError("cuda_oom", "Indisponible")
+        yield
+    tts.stream = fail
+    response = client.post("/v1/audio/speech", json={
+        "input": "Bonjour", "voice": "Ryan", "stream": True, "response_format": "pcm",
+    })
+    assert response.status_code == 503
+    assert not client.app.state.app_state.gpu_lock.locked()
 
 
 @pytest.mark.parametrize("alias", ["tts-1", "tts-1-hd", "gpt-4o-mini-tts"])

@@ -5,11 +5,13 @@ import { useServices } from "../../app/services";
 import { Button } from "../../ui/Button";
 import { OperationStatus } from "../../ui/OperationStatus";
 import { OneShotClone, audioFormatOptions } from "./OneShotClone";
-import { createSpeech } from "./speech-api";
+import { createSpeech, createSpeechStream } from "./speech-api";
+import { useLivePlayback } from "../../media/useLivePlayback";
 import { SpeechResult } from "./SpeechResult";
 
 export function SpeechPage() {
   const { http, history } = useServices();
+  const live = useLivePlayback();
   const [mode, setMode] = useState<TtsMode>("qwen3-tts-custom-voice");
   const [voices, setVoices] = useState<Voice[]>([]);
   const [voice, setVoice] = useState("");
@@ -68,21 +70,24 @@ export function SpeechPage() {
     input.trim().length > 0 && input.length <= 4096 && !pending &&
     (voiceDesign ? instructions.trim().length > 0 : voice.length > 0);
 
-  const submit = async (event: Event) => {
+  const submit = async (event: Event, streaming = false) => {
     event.preventDefault();
     if (!canSubmit) return;
     setPending(true);
     setStartedAt(Date.now());
     setError(null);
     try {
-      const audio = await createSpeech(http, {
+      const request = {
         model: mode,
         input,
         ...(voiceDesign ? { instructions } : { voice }),
         response_format: responseFormat,
         speed,
         language,
-      });
+      };
+      const audio = streaming
+        ? await live.play((onChunk, signal) => createSpeechStream(http, request, onChunk, signal))
+        : await createSpeech(http, request);
       const entry = await history.add({
         kind: "speech",
         title: input.slice(0, 60),
@@ -90,7 +95,7 @@ export function SpeechPage() {
           mode,
           voice: voiceDesign ? null : voice,
           language,
-          responseFormat,
+          responseFormat: streaming ? "wav" : responseFormat,
           speed,
         },
         resultText: input,
@@ -99,6 +104,7 @@ export function SpeechPage() {
       setResult(audio);
       setHistoryId(entry.id);
     } catch (reason) {
+      if (reason instanceof Error && reason.name === "AbortError") return;
       setError(reason instanceof Error ? reason.message : "La synthèse vocale a échoué.");
     } finally {
       setPending(false);
@@ -144,6 +150,9 @@ export function SpeechPage() {
         {historyMessage ? <p class="service-guidance">{historyMessage}</p> : null}
         {error ? <p class="field__error" role="alert">{error}</p> : null}
         <Button disabled={!canSubmit} type="submit" variant="primary">Créer l’audio</Button>
+        <Button disabled={!canSubmit || speed !== 1} type="button" onClick={(event) => void submit(event, true)}>Écouter en direct</Button>
+        {live.active ? <Button type="button" onClick={live.stop}>Arrêter</Button> : null}
+        <p class="field__hint">La lecture en direct commence dès les premiers sons, à vitesse normale. Le résultat est disponible en WAV.</p>
       </form>
       {result && historyId ? <SpeechResult audio={result} history={history} historyId={historyId} /> : null}
       <OneShotClone />

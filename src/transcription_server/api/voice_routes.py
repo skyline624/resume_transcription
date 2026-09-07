@@ -4,11 +4,13 @@ import tempfile
 from pathlib import Path
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
+from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile, Request
 from fastapi.responses import Response
 from starlette.concurrency import run_in_threadpool
 
 from transcription_server.api.native_routes import _save_upload
+from transcription_server.api.tts_streaming import pcm_response
+from transcription_server.tts.text import segment_text
 from transcription_server.pipeline import TranscriptionRequest, run_pipeline
 from transcription_server.state import AppState, get_state
 from transcription_server.tts.audio_output import AudioRenderError, render_output
@@ -99,6 +101,7 @@ async def delete_voice(
 
 @router.post("/audio/speech/clone")
 async def clone_once(
+    http_request: Request,
     state: Annotated[AppState, Depends(get_state)],
     file: Annotated[UploadFile, File()],
     input: Annotated[str, Form(min_length=1, max_length=4096)],
@@ -108,38 +111,65 @@ async def clone_once(
     instructions: Annotated[str | None, Form()] = None,
     response_format: Annotated[AudioFormat, Form()] = AudioFormat.MP3,
     speed: Annotated[float, Form(ge=0.25, le=4.0)] = 1.0,
+    stream: Annotated[bool, Form()] = False,
 ) -> Response:
     if not consent:
         _error(400, "consent_required", "Le consentement explicite est requis.")
     if instructions:
         _error(422, "unsupported_parameter", "instructions n'est pas pris en charge pour clone.")
+    if stream and (response_format is not AudioFormat.PCM or speed != 1.0):
+        _error(422, "unsupported_parameter", "stream=true exige response_format=pcm et speed=1.")
     upload = await _save_upload(file, state.settings.max_upload_bytes)
     try:
+        if stream:
+            return await _clone_stream(state, upload, input, transcript, language, http_request)
         with tempfile.TemporaryDirectory(prefix="voice-clone-") as directory:
             reference = await _prepare(state, upload, Path(directory))
             reference_text, _ = await _reference_text(
                 state, reference.path, transcript, language
             )
             try:
+                segments = segment_text(input, 500)
+                chunks = []
                 async with state.gpu_lock:
                     await state.prepare_tts()
-                    result = await state.tts.synthesize(SynthesisRequest(
-                        text=input,
-                        mode=TtsMode.CLONE,
-                        language=language,
-                        reference_path=reference.path,
-                        reference_text=reference_text,
-                    ))
+                    for segment in segments:
+                        result = await state.tts.synthesize(SynthesisRequest(
+                            text=segment.text,
+                            mode=TtsMode.CLONE,
+                            language=language,
+                            reference_path=reference.path,
+                            reference_text=reference_text,
+                        ))
+                        chunks.append(result.audio_wav)
                 encoded = await run_in_threadpool(
-                    render_output, [result.audio_wav], [0], speed, response_format
+                    render_output, chunks, [segment.pause_after_ms for segment in segments], speed, response_format
                 )
             except TtsUnavailableError as exc:
                 _error(503, exc.code, str(exc))
             except AudioRenderError as exc:
                 _error(503, "audio_render_failed", str(exc))
+    except TtsUnavailableError as exc:
+        _error(503, exc.code, str(exc))
     finally:
         upload.unlink(missing_ok=True)
     return Response(encoded.data, media_type=encoded.media_type)
+
+
+async def _clone_stream(state, upload, text, transcript, language, http_request):
+    directory = tempfile.TemporaryDirectory(prefix="voice-clone-stream-")
+    try:
+        reference = await _prepare(state, upload, Path(directory.name))
+        reference_text, _ = await _reference_text(state, reference.path, transcript, language)
+        return await pcm_response(state, (
+            (SynthesisRequest(
+                text=segment.text, mode=TtsMode.CLONE, language=language,
+                reference_path=reference.path, reference_text=reference_text,
+            ), segment.pause_after_ms) for segment in segment_text(text, 500)
+        ), cleanup=directory.cleanup, http_request=http_request)
+    except BaseException:
+        directory.cleanup()
+        raise
 
 
 async def _prepare(state: AppState, upload: Path, directory: Path):

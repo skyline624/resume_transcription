@@ -28,9 +28,12 @@ class SpeechRequest(BaseModel):
     response_format: AudioFormat = AudioFormat.MP3
     speed: float = Field(default=1.0, ge=0.25, le=4.0)
     language: str = "fr"
+    stream: bool = False
 
     @model_validator(mode="after")
     def validate_mode_fields(self) -> "SpeechRequest":
+        if self.stream and (self.response_format is not AudioFormat.PCM or self.speed != 1.0):
+            raise ValueError("stream=true exige response_format=pcm et speed=1.")
         mode = resolve_model_alias(self.model)
         if mode in (TtsMode.CUSTOM_VOICE, TtsMode.CLONE) and not self.voice:
             raise ValueError("voice est requis pour ce mode.")

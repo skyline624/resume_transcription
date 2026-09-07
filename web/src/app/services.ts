@@ -10,6 +10,7 @@ export interface HttpPort {
   postJson<T>(path: string, body: unknown, init?: RequestInit): Promise<T>;
   postForm<T>(path: string, body: FormData, init?: RequestInit): Promise<T>;
   postBlob(path: string, body: unknown, init?: RequestInit): Promise<AudioResult>;
+  postStream(path: string, body: unknown, onChunk: (chunk: Uint8Array) => void, init?: RequestInit): Promise<AudioResult>;
   delete(path: string, init?: RequestInit): Promise<void>;
 }
 

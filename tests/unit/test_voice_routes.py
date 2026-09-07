@@ -34,6 +34,13 @@ class FakeTts:
         self.requests.append(request)
         return SynthesisResult(wav_bytes(seconds=1), 24000, request.mode.value)
 
+    async def stream(self, request):
+        self.requests.append(request)
+        assert request.reference_path.exists()
+        yield b"\x01\x00"
+        assert request.reference_path.exists()
+        yield b"\x02\x00"
+
     async def unload(self, reason):
         return None
 
@@ -80,6 +87,19 @@ def test_creation_exige_un_consentement_explicite(voice_client):
     )
     assert response.status_code == 400
     assert response.json()["error"]["code"] == "consent_required"
+
+
+def test_clone_stream_garde_la_reference_jusqu_a_la_fin(voice_client):
+    client, tts, paths = voice_client
+    response = client.post("/v1/audio/speech/clone",
+        files={"file": ("voice.wav", wav_bytes(), "audio/wav")},
+        data={"input": "Bonjour. Encore.", "transcript": "Bonjour", "consent": "true",
+              "stream": "true", "response_format": "pcm"},
+    )
+    assert response.status_code == 200
+    assert response.headers["content-type"].startswith("audio/pcm")
+    assert len(tts.requests) == 2
+    assert paths and all(not path.exists() for path in paths)
 
 
 def test_creation_liste_et_suppression_d_un_clone(voice_client):
@@ -129,3 +149,17 @@ def test_clone_ponctuel_refuse_instructions(voice_client):
         data={"input": "Bonjour", "consent": "true", "instructions": "vite"},
     )
     assert response.status_code == 422
+
+
+def test_clone_ponctuel_segmente_les_textes_longs(voice_client):
+    client, tts, _ = voice_client
+    text = ("Bonjour ceci est une phrase longue " * 30).strip()
+    response = client.post(
+        "/v1/audio/speech/clone",
+        files={"file": ("voice.wav", wav_bytes(), "audio/wav")},
+        data={"input": text, "transcript": "Bonjour", "consent": "true", "response_format": "wav"},
+    )
+    assert response.status_code == 200
+    assert len(tts.requests) > 1
+    assert all(len(request.text) <= 500 for request in tts.requests)
+    assert " ".join(request.text for request in tts.requests) == text

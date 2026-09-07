@@ -3,6 +3,8 @@ models/
 .git/
 .pytest_cache/
 __pycache__/
+**/__pycache__/
+benchmark-results/
 *.egg-info/
 docs/
 .env

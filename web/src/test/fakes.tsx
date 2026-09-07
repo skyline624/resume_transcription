@@ -44,6 +44,10 @@ export function fakeServices(options: FakeOptions = {}) {
       filename: "speech.mp3",
     })),
     delete: vi.fn(async () => undefined),
+    postStream: vi.fn(async (_path: string, _body: unknown, onChunk: (chunk: Uint8Array) => void, _init?: RequestInit): Promise<AudioResult> => {
+      onChunk(new Uint8Array([0, 0]));
+      return { blob: speechBlob, contentType: "audio/wav", filename: "speech.wav" };
+    }),
   };
   const http = httpImpl as unknown as HttpPort & typeof httpImpl;
 

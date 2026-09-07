@@ -27,6 +27,17 @@ class Settings(BaseSettings):
     diarization_model: str = "pyannote/speaker-diarization-community-1"
     enable_diarization: bool = True
 
+    # --- Cycle de vie GPU ---
+    #
+    # La liberation automatique est active par defaut : la VRAM doit revenir au
+    # systeme quand aucune requete n'utilise le serveur.
+    enable_lazy_gpu: bool = True
+    # Delai commun ASR/diarization avant decharger les modeles du processus.
+    gpu_idle_unload_s: float = Field(default=900.0, ge=0)
+    # Les premiers telechargements de modeles peuvent etre longs.
+    asr_load_timeout_s: float = Field(default=600.0, gt=0)
+    diarization_load_timeout_s: float = Field(default=600.0, gt=0)
+
     device: Literal["cuda", "cpu"] = "cuda"
     compute_type: Literal["float16", "float32"] = "float16"
 

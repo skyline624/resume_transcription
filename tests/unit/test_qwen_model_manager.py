@@ -1,4 +1,6 @@
 import pytest
+import threading
+from concurrent.futures import ThreadPoolExecutor
 
 from qwen_tts_worker.domain import GenerateCommand, Mode, WorkerModelError
 from qwen_tts_worker.model_manager import QwenModelManager
@@ -86,6 +88,72 @@ def test_delai_inactif_decharge_le_modele(fake_clock):
     fake_clock.value += 11
     assert manager.unload_if_idle() is True
     assert manager.health()["state"] == "idle"
+
+
+def test_health_repond_pendant_le_chargement():
+    loading = threading.Event()
+    finish = threading.Event()
+
+    def loader(mode, model_id):
+        loading.set()
+        finish.wait(3)
+        return FakeModel(mode, [])
+
+    manager = QwenModelManager({Mode.CUSTOM: "custom"}, loader, lambda: None, 300)
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        generation = pool.submit(manager.generate, command(Mode.CUSTOM))
+        assert loading.wait(2)
+        try:
+            snapshot = pool.submit(manager.health).result(timeout=0.2)
+            assert snapshot["state"] == "loading"
+        finally:
+            finish.set()
+            generation.result(timeout=2)
+
+
+def test_stream_reutilise_le_modele_et_met_a_jour_l_inactivite(fake_clock):
+    class StreamingModel(FakeModel):
+        def stream(self, command):
+            yield [0.1], 24000
+            fake_clock.value += 10
+            yield [0.2], 24000
+
+    loads = []
+    def loader(mode, model_id):
+        loads.append(model_id)
+        return StreamingModel(mode, [])
+
+    manager = QwenModelManager({Mode.CUSTOM: "custom"}, loader, lambda: None, 10, fake_clock)
+    stream = manager.stream(command(Mode.CUSTOM))
+    assert next(stream) == ([0.1], 24000)
+    assert manager.health()["state"] == "generating"
+    assert list(stream) == [([0.2], 24000)]
+    assert manager.health()["state"] == "ready"
+    assert not manager.unload_if_idle()
+    manager.generate(command(Mode.CUSTOM))
+    assert loads == ["custom"]
+    fake_clock.value += 11
+    assert manager.unload_if_idle()
+
+
+def test_fermer_le_flux_conserve_un_modele_reutilisable(fake_clock):
+    closed = []
+    class StreamingModel(FakeModel):
+        def stream(self, command):
+            try:
+                yield [0.1], 24000
+                raise AssertionError("La generation annulee doit s'arreter")
+            finally:
+                closed.append(True)
+    manager = QwenModelManager(
+        {Mode.CUSTOM: "custom"}, lambda mode, _: StreamingModel(mode, []),
+        lambda: None, 10, fake_clock,
+    )
+    stream = manager.stream(command(Mode.CUSTOM))
+    next(stream)
+    stream.close()
+    assert closed == [True]
+    assert manager.health()["state"] == "ready"
 
 
 @pytest.fixture

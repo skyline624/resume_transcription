@@ -46,6 +46,8 @@ class HealthOut(BaseModel):
     vad_enabled: bool
     summary_model: str
     summary_enabled: bool
+    asr_state: str
+    diarization_state: str
     # dict nu vaudrait dict[Any, Any] : une cle non serialisable y passerait la
     # validation pour ne se manifester qu'a la serialisation, en avertissement.
     gpu: dict[str, Any] | None = None

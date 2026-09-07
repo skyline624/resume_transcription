@@ -15,6 +15,7 @@ from transcription_server.api import (
 )
 from transcription_server.asr.engine import AsrEngine
 from transcription_server.config import Settings
+from transcription_server.lifecycle import GpuLifecycleManager, LazyEngine, TtsLifecycleClient
 from transcription_server.diarization.engine import (
     DiarizationEngine,
     NullDiarizationEngine,
@@ -193,12 +194,42 @@ def build_app(settings: Settings | None = None) -> FastAPI:
         else settings.vad_device
     )
 
-    logger.info("Chargement des moteurs sur %s…", device)
-    asr = _load_nemo_engine(
-        model_name=settings.asr_model,
-        device=device,
-        compute_type=settings.compute_type,
-    )
+    logger.info("Construction de l'application sur %s", device)
+    if settings.enable_lazy_gpu:
+        def load_asr_lazy() -> AsrEngine:
+            engine = _load_nemo_engine(
+                model_name=settings.asr_model,
+                device=device,
+                compute_type=settings.compute_type,
+            )
+            _warmup(engine, device)
+            return engine
+
+        asr = LazyEngine(
+            settings.asr_model,
+            load_asr_lazy,
+            "transcribe",
+            idle_s=settings.gpu_idle_unload_s,
+        )
+        if settings.enable_diarization:
+            diarization = LazyEngine(
+                settings.diarization_model,
+                lambda: _load_pyannote_engine(
+                    model_name=settings.diarization_model,
+                    hf_token=settings.hf_token or "",
+                    device=device,
+                ),
+                "diarize",
+                idle_s=settings.gpu_idle_unload_s,
+            )
+        else:
+            diarization = NullDiarizationEngine()
+    else:
+        asr = _load_nemo_engine(
+            model_name=settings.asr_model,
+            device=device,
+            compute_type=settings.compute_type,
+        )
 
     vad = None
     if settings.enable_vad:
@@ -217,7 +248,7 @@ def build_app(settings: Settings | None = None) -> FastAPI:
                 overlap_s=settings.vad_fallback_overlap_s,
             )
 
-    if settings.enable_diarization:
+    if not settings.enable_lazy_gpu and settings.enable_diarization:
         diarization = _load_pyannote_engine(
             model_name=settings.diarization_model,
             # Le token n'est pas copie dans une variable locale : Field(repr=False)
@@ -225,7 +256,8 @@ def build_app(settings: Settings | None = None) -> FastAPI:
             hf_token=settings.hf_token or "",
             device=device,
         )
-    else:
+    elif not settings.enable_lazy_gpu:
+        # Lazy desactive et diarization desactivee : aucun moteur a charger.
         logger.info(
             "Diarization désactivée (ENABLE_DIARIZATION=false) : le serveur "
             "démarre sans token HuggingFace et ne séparera pas les locuteurs."
@@ -244,10 +276,18 @@ def build_app(settings: Settings | None = None) -> FastAPI:
         logger.info("Rédaction de compte-rendu désactivée (ENABLE_SUMMARY=false).")
         summary = UnavailableSummaryEngine()
 
-    _warmup(asr, device)
-    tts, voice_profiles = _build_tts_dependencies(settings)
+    if not settings.enable_lazy_gpu:
+        _warmup(asr, device)
 
-    return create_app(
+    tts, voice_profiles = _build_tts_dependencies(settings)
+    if settings.enable_lazy_gpu:
+        if settings.enable_tts:
+            tts = TtsLifecycleClient(tts, idle_s=settings.tts_idle_unload_s)
+        else:
+            tts = None
+        engines = (diarization, asr) if isinstance(diarization, LazyEngine) else (asr,)
+
+    application = create_app(
         settings=settings,
         asr=asr,
         diarization=diarization,
@@ -257,6 +297,17 @@ def build_app(settings: Settings | None = None) -> FastAPI:
         tts=tts,
         voice_profiles=voice_profiles,
     )
+    if settings.enable_lazy_gpu:
+        lifecycle = GpuLifecycleManager(
+            engines,
+            tts,
+            interval_s=max(1.0, min(settings.gpu_idle_unload_s, settings.tts_idle_unload_s) / 4.0),
+            gpu_lock=application.state.app_state.gpu_lock,
+        )
+        application.state.app_state.lifecycle = lifecycle
+        application.router.on_startup.append(lifecycle.start)
+        application.router.on_shutdown.append(lifecycle.stop)
+    return application
 
 
 def _warmup(asr: AsrEngine, device: str) -> None:

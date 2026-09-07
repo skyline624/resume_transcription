@@ -29,12 +29,14 @@ def moteurs_simules(monkeypatch):
     appels = {"asr": [], "diarization": [], "vad": []}
 
     def faux_load_nemo(model_name, device, compute_type):
+        print("load:asr")
         appels["asr"].append(
             {"model_name": model_name, "device": device, "compute_type": compute_type}
         )
         return StubAsrEngine([Word("bonjour", 0.0, 0.5)], name=model_name)
 
     def faux_load_pyannote(model_name, hf_token, device):
+        print("load:diarization")
         appels["diarization"].append({"model_name": model_name, "device": device})
         return StubDiarizationEngine([], name=model_name)
 
@@ -65,7 +67,7 @@ def test_cuda_indisponible_fait_echouer_le_demarrage(monkeypatch, moteurs_simule
     """Aucun repli CPU silencieux : mieux vaut refuser de demarrer que
     transcrire vingt fois plus lentement sans que personne ne le sache."""
     monkeypatch.setattr(app_module, "cuda_available", lambda: False)
-    reglages = Settings(_env_file=None, hf_token=TOKEN, device="cuda")
+    reglages = Settings(_env_file=None, enable_lazy_gpu=False, hf_token=TOKEN, device="cuda")
     with pytest.raises(CudaUnavailableError):
         app_module.build_app(reglages)
 
@@ -74,7 +76,7 @@ def test_l_echec_cuda_precede_le_chargement_des_modeles(monkeypatch, moteurs_sim
     """Echouer avant de telecharger 2,6 Go de poids, pas apres."""
     monkeypatch.setattr(app_module, "cuda_available", lambda: False)
     with pytest.raises(CudaUnavailableError):
-        app_module.build_app(Settings(_env_file=None, hf_token=TOKEN, device="cuda"))
+        app_module.build_app(Settings(_env_file=None, enable_lazy_gpu=False, hf_token=TOKEN, device="cuda"))
     assert moteurs_simules["asr"] == []
     assert moteurs_simules["diarization"] == []
 
@@ -82,7 +84,7 @@ def test_l_echec_cuda_precede_le_chargement_des_modeles(monkeypatch, moteurs_sim
 def test_cpu_demande_demarre_sans_cuda(monkeypatch, moteurs_simules):
     monkeypatch.setattr(app_module, "cuda_available", lambda: False)
     application = app_module.build_app(
-        Settings(_env_file=None, enable_diarization=False, device="cpu")
+        Settings(_env_file=None, enable_lazy_gpu=False, enable_diarization=False, device="cpu")
     )
     assert moteurs_simules["asr"][0]["device"] == "cpu"
     assert TestClient(application).get("/health").json()["device"] == "cpu"
@@ -92,7 +94,7 @@ def test_diarization_desactivee_n_appelle_pas_pyannote(monkeypatch, moteurs_simu
     """Le serveur doit demarrer sans token quand la diarization est eteinte."""
     monkeypatch.setattr(app_module, "cuda_available", lambda: True)
     application = app_module.build_app(
-        Settings(_env_file=None, enable_diarization=False, device="cuda")
+        Settings(_env_file=None, enable_lazy_gpu=False, enable_diarization=False, device="cuda")
     )
     assert moteurs_simules["diarization"] == []
     corps = TestClient(application).get("/health").json()
@@ -102,7 +104,7 @@ def test_diarization_desactivee_n_appelle_pas_pyannote(monkeypatch, moteurs_simu
 
 def test_diarization_activee_charge_pyannote(monkeypatch, moteurs_simules):
     monkeypatch.setattr(app_module, "cuda_available", lambda: True)
-    reglages = Settings(_env_file=None, hf_token=TOKEN, device="cuda")
+    reglages = Settings(_env_file=None, enable_lazy_gpu=False, hf_token=TOKEN, device="cuda")
     application = app_module.build_app(reglages)
     assert moteurs_simules["diarization"][0]["model_name"] == reglages.diarization_model
     assert moteurs_simules["diarization"][0]["device"] == "cuda"
@@ -115,7 +117,7 @@ def test_diarization_activee_charge_pyannote(monkeypatch, moteurs_simules):
 def test_vad_est_charge_sur_cpu_par_defaut(monkeypatch, moteurs_simules):
     monkeypatch.setattr(app_module, "cuda_available", lambda: True)
     application = app_module.build_app(
-        Settings(_env_file=None, enable_diarization=False, device="cuda")
+        Settings(_env_file=None, enable_lazy_gpu=False, enable_diarization=False, device="cuda")
     )
 
     assert moteurs_simules["vad"] == [
@@ -136,7 +138,7 @@ def test_echec_du_chargement_silero_garde_des_fenetres_courtes(
 
     monkeypatch.setattr(app_module, "_load_silero_vad_engine", chargement_en_echec)
     application = app_module.build_app(
-        Settings(_env_file=None, enable_diarization=False, device="cpu")
+        Settings(_env_file=None, enable_lazy_gpu=False, enable_diarization=False, device="cpu")
     )
 
     corps = TestClient(application).get("/health").json()
@@ -147,8 +149,12 @@ def test_echec_du_chargement_silero_garde_des_fenetres_courtes(
 def test_les_reglages_sont_transmis_aux_fabriques(monkeypatch, moteurs_simules):
     monkeypatch.setattr(app_module, "cuda_available", lambda: True)
     reglages = Settings(
-        _env_file=None, hf_token=TOKEN, device="cuda", compute_type="float32"
-    )
+            _env_file=None,
+            hf_token=TOKEN,
+            device="cuda",
+            compute_type="float32",
+            enable_lazy_gpu=False,
+        )
     app_module.build_app(reglages)
     assert moteurs_simules["asr"][0] == {
         "model_name": reglages.asr_model,
@@ -173,7 +179,7 @@ def test_le_warmup_a_lieu_sur_cuda(monkeypatch):
         app_module, "_load_nemo_engine", lambda **kw: AsrQuiCompte()
     )
     app_module.build_app(
-        Settings(_env_file=None, enable_diarization=False, device="cuda")
+        Settings(_env_file=None, enable_lazy_gpu=False, enable_diarization=False, device="cuda")
     )
     assert appels == [16000], "le warmup doit passer 1 s de silence"
 
@@ -193,7 +199,7 @@ def test_pas_de_warmup_sur_cpu(monkeypatch):
         app_module, "_load_nemo_engine", lambda **kw: AsrQuiCompte()
     )
     app_module.build_app(
-        Settings(_env_file=None, enable_diarization=False, device="cpu")
+        Settings(_env_file=None, enable_lazy_gpu=False, enable_diarization=False, device="cpu")
     )
     assert appels == []
 
@@ -227,7 +233,7 @@ def test_un_warmup_qui_echoue_ne_bloque_pas_le_demarrage(monkeypatch):
 
 def test_device_info_est_expose_par_health():
     application = create_app(
-        settings=Settings(_env_file=None, enable_diarization=False, device="cpu"),
+        settings=Settings(_env_file=None, enable_lazy_gpu=False, enable_diarization=False, device="cpu"),
         asr=StubAsrEngine([]),
         diarization=NullDiarizationEngine(),
         device_info={"name": "NVIDIA GeForce RTX 3090", "vram_total_mb": 24576},
