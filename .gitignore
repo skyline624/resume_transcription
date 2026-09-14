@@ -13,3 +13,9 @@ sorties/
 benchmark-results/
 node_modules/
 coverage/
+voices/
+.venv-qwen/
+runtime/
+.env.studio-linux
+.env.docker-studio
+speakers/

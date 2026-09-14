@@ -17,7 +17,8 @@ Contraintes que tu dois respecter :
 - La transcription comporte des erreurs de reconnaissance : un mot qui n'a pas
   de sens dans le contexte est probablement mal transcrit. Ne le cite pas
   comme s'il était sûr.
-- Les locuteurs sont anonymes (SPEAKER_00, SPEAKER_01…). N'invente pas de noms.
+- Conserve les noms de locuteurs fournis dans la transcription. Les locuteurs
+  non reconnus restent anonymes (SPEAKER_00, SPEAKER_01…). N'invente pas de noms.
   Si quelqu'un se nomme dans la conversation, tu peux l'indiquer entre
   parenthèses la première fois.
 - Écris en français, sans anglicismes inutiles.

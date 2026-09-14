@@ -52,6 +52,9 @@ pythonpath = ["src", "qwen_worker/src"]
 # la prochaine depreciation, c'est-a-dire exactement le signal recherche.
 filterwarnings = [
     "error",
+    # Starlette 1.6 emploie encore cet alias deprecie par AnyIO 4.15.
+    # L'avertissement tiers reste visible sans bloquer les tests sous Ubuntu.
+    "default:The anyio.abc.BlockingPortal alias is deprecated, use anyio.from_thread.BlockingPortal instead:DeprecationWarning",
     # torchcodec ne se charge pas dans l'image (libtorchcodec_image.so
     # introuvable) et pyannote previent que son decodage integre echouera.
     # Nous ne l'utilisons pas : l'audio est decode par ffmpeg puis passe en

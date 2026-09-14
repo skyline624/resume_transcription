@@ -1,4 +1,9 @@
 .venv/
+.venv-qwen/
+runtime/
+voices/
+sorties/
+.worktrees/
 models/
 .git/
 .pytest_cache/
@@ -8,7 +13,9 @@ benchmark-results/
 *.egg-info/
 docs/
 .env
+.env.*
 .superpowers/
 web/node_modules/
 web/dist/
 web/coverage/
+speakers/

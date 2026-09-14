@@ -18,10 +18,12 @@ from qwen_tts_worker.model_manager import (
 
 def main() -> None:
     socket = Path(os.environ.get("TTS_WORKER_SOCKET", "/run/qwen-tts/worker.sock"))
-    allowed = Path("/run/qwen-tts").resolve()
+    # Un service systemd utilisateur dispose de son propre dossier runtime.
+    runtime = os.environ.get("XDG_RUNTIME_DIR")
+    allowed = (Path(runtime) / "qwen-tts" if runtime else Path("/run/qwen-tts")).resolve()
     socket = socket.resolve()
     if not socket.is_relative_to(allowed):
-        raise RuntimeError("TTS_WORKER_SOCKET doit rester sous /run/qwen-tts.")
+        raise RuntimeError(f"TTS_WORKER_SOCKET doit rester sous {allowed}.")
     socket.parent.mkdir(parents=True, exist_ok=True)
     socket.unlink(missing_ok=True)
     model_ids = {

@@ -7,6 +7,7 @@ from fastapi.responses import JSONResponse
 
 from transcription_server.api import (
     native_routes,
+    speaker_routes,
     openai_routes,
     summary_routes,
     tts_routes,
@@ -29,6 +30,7 @@ from transcription_server.state import AppState
 from transcription_server.vad.engine import FixedWindowVadEngine, VadEngine
 from transcription_server.tts.client import TtsClient, UnavailableTtsClient, UnixTtsClient
 from transcription_server.tts.profiles import VoiceProfileRepository
+from transcription_server.speakers import SpeakerRegistry
 
 logger = logging.getLogger(__name__)
 
@@ -37,6 +39,7 @@ _WARMUP_S = 1.0
 
 _ERROR_TYPES = {
     400: "invalid_request_error",
+    404: "invalid_request_error",
     413: "invalid_request_error",
     503: "service_unavailable",
 }
@@ -51,6 +54,7 @@ def create_app(
     vad: VadEngine | None = None,
     tts: TtsClient | None = None,
     voice_profiles: VoiceProfileRepository | None = None,
+    speaker_registry: SpeakerRegistry | None = None,
 ) -> FastAPI:
     """Assemble l'application autour de moteurs deja construits.
 
@@ -69,6 +73,7 @@ def create_app(
         device_info=device_info or {},
         tts=tts or UnavailableTtsClient(),
         voice_profiles=voice_profiles,
+        speaker_registry=speaker_registry,
     )
 
     @app.exception_handler(HTTPException)
@@ -119,6 +124,7 @@ def create_app(
         )
 
     app.include_router(native_routes.router)
+    app.include_router(speaker_routes.router)
     app.include_router(openai_routes.router)
     app.include_router(summary_routes.router)
     app.include_router(tts_routes.router)
@@ -296,6 +302,13 @@ def build_app(settings: Settings | None = None) -> FastAPI:
         device_info=gpu_info(),
         tts=tts,
         voice_profiles=voice_profiles,
+        speaker_registry=SpeakerRegistry(
+            settings.speaker_store_path,
+            threshold=settings.speaker_match_threshold,
+            margin=settings.speaker_match_margin,
+            minimum_s=settings.speaker_min_speech_s,
+            pending_ttl_s=settings.speaker_pending_ttl_s,
+        ) if settings.enable_speaker_recognition and settings.enable_diarization else None,
     )
     if settings.enable_lazy_gpu:
         lifecycle = GpuLifecycleManager(

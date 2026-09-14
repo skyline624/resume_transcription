@@ -11,9 +11,31 @@ import logging
 import numpy as np
 
 from transcription_server.audio import SAMPLE_RATE
+from transcription_server.diarization.engine import DiarizationSegments, SpeakerEmbedding
 from transcription_server.domain import SpeakerSegment
 
 logger = logging.getLogger(__name__)
+
+
+def _clean_speech_durations(segments: list[SpeakerSegment]) -> dict[str, float]:
+    """Duree de parole sans autre locuteur, sans compter deux fois un intervalle."""
+    events = []
+    for segment in segments:
+        if segment.end > segment.start:
+            events.extend(((segment.start, segment.speaker, 1),
+                           (segment.end, segment.speaker, -1)))
+    active: dict[str, int] = {}
+    durations: dict[str, float] = {}
+    previous = 0.0
+    for instant, label, delta in sorted(events):
+        if len(active) == 1:
+            speaker = next(iter(active))
+            durations[speaker] = durations.get(speaker, 0.0) + instant - previous
+        active[label] = active.get(label, 0) + delta
+        if active[label] == 0:
+            del active[label]
+        previous = instant
+    return durations
 
 
 def _annotation_de(sortie):
@@ -110,7 +132,22 @@ class PyannoteEngine:
             for tour, _, locuteur in annotation.itertracks(yield_label=True)
         ]
         segments.sort(key=lambda segment: (segment.start, segment.end))
-        return segments
+        embeddings = {}
+        vectors = getattr(sortie, "speaker_embeddings", None)
+        if vectors is not None:
+            # Pyannote 4 garantit l'ordre annotation.labels(), pas l'ordre
+            # chronologique des segments ni celui des suffixes numeriques.
+            labels = annotation.labels()
+            vectors = np.asarray(vectors)
+            if vectors.ndim == 2 and len(vectors) == len(labels):
+                durations = _clean_speech_durations(segments)
+                for label, vector in zip(labels, vectors):
+                    embeddings[str(label)] = SpeakerEmbedding(
+                        model=f"{self._name}|pyannote4-centroids-v1",
+                        values=tuple(float(value) for value in vector),
+                        speech_s=durations.get(str(label), 0.0),
+                    )
+        return DiarizationSegments(segments, embeddings)
 
 
 def load_pyannote_engine(

@@ -1,0 +1,95 @@
+name: resume-transcription-docker
+
+services:
+  transcription:
+    image: transcription-parakeet:studio-linux
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.studio-linux
+    user: "1000:1000"
+    env_file: .env.docker-studio
+    environment:
+      SPEAKER_STORE_PATH: /app/speakers
+    ports:
+      - "127.0.0.1:${TRANSCRIPTION_PORT:-8000}:8000"
+      - "192.168.1.141:${TRANSCRIPTION_PORT:-8000}:8000"
+    volumes:
+      - type: bind
+        source: ./speakers
+        target: /app/speakers
+        bind:
+          create_host_path: false
+      - type: bind
+        source: ./models
+        target: /app/models
+        bind:
+          create_host_path: false
+      - type: bind
+        source: ./runtime/nemo-cache
+        target: /app/nemo-cache
+        bind:
+          create_host_path: false
+      - type: bind
+        source: ./runtime/torch
+        target: /app/torch-cache
+        bind:
+          create_host_path: false
+      # Garder le chemin absolu enregistre dans les profils vocaux migres.
+      - type: bind
+        source: ./voices
+        target: /mnt/donnees/resume_transcription/voices
+        bind:
+          create_host_path: false
+    tmpfs:
+      - /run/qwen-tts:uid=1000,gid=1000,mode=0700
+    gpus: all
+    depends_on:
+      ollama:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://localhost:8000/health"]
+      interval: 15s
+      timeout: 10s
+      start_period: 300s
+      retries: 3
+    restart: unless-stopped
+    stop_grace_period: 45s
+    logging:
+      driver: local
+      options:
+        max-size: "20m"
+        max-file: "3"
+
+  ollama:
+    image: ollama/ollama:0.34.0
+    user: "1000:1000"
+    environment:
+      HOME: /home/ollama
+      OLLAMA_HOST: 0.0.0.0:11434
+      OLLAMA_MODELS: /models
+      OLLAMA_KEEP_ALIVE: "0"
+    volumes:
+      - type: bind
+        source: ./runtime/ollama
+        target: /models
+        bind:
+          create_host_path: false
+      - type: bind
+        source: ./runtime/ollama-state
+        target: /home/ollama/.ollama
+        bind:
+          create_host_path: false
+    gpus: all
+    healthcheck:
+      test: ["CMD", "ollama", "list"]
+      interval: 15s
+      timeout: 10s
+      start_period: 30s
+      retries: 3
+    restart: unless-stopped
+    stop_grace_period: 45s
+    logging:
+      driver: local
+      options:
+        max-size: "20m"
+        max-file: "3"

@@ -1,10 +1,26 @@
 """Contrat des moteurs de diarization."""
 
+from dataclasses import dataclass
 from typing import Protocol, runtime_checkable
 
 import numpy as np
 
 from transcription_server.domain import SpeakerSegment
+
+
+@dataclass(frozen=True)
+class SpeakerEmbedding:
+    model: str
+    values: tuple[float, ...]
+    speech_s: float
+
+
+class DiarizationSegments(list[SpeakerSegment]):
+    """Segments et empreintes issus du meme appel, sans etat partage du moteur."""
+
+    def __init__(self, segments, embeddings: dict[str, SpeakerEmbedding]):
+        super().__init__(segments)
+        self.embeddings = embeddings
 
 
 @runtime_checkable

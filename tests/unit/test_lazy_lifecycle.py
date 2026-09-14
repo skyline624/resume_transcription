@@ -14,6 +14,12 @@ from transcription_server.lifecycle import (
 )
 
 
+@pytest.fixture(autouse=True)
+def registre_voix_temporaire(tmp_path, monkeypatch, environnement_neutre):
+    """Fonctionne aussi hors conteneur, sans droits d'ecriture dans /app."""
+    monkeypatch.setenv("VOICE_STORE_PATH", str(tmp_path / "voices"))
+
+
 class Horloge:
     def __init__(self):
         self.value = 1000.0

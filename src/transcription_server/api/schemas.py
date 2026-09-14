@@ -16,10 +16,18 @@ class WordOut(BaseModel):
 
 class TurnOut(BaseModel):
     speaker: str | None
+    speaker_label: str | None = None
     start: float
     end: float
     text: str
     words: list[WordOut] = Field(default_factory=list)
+
+
+class SpeakerMatchOut(BaseModel):
+    speaker_id: str | None = None
+    name: str | None = None
+    score: float | None = None
+    enrollable: bool = False
 
 
 class TranscriptionOut(BaseModel):
@@ -33,6 +41,8 @@ class TranscriptionOut(BaseModel):
     #: Expose pour que l'appelant sache ce que le serveur a fait de son
     #: fichier, plutot que de devoir le deduire.
     channels_used: int = 1
+    transcription_id: str | None = None
+    speaker_matches: dict[str, SpeakerMatchOut] = Field(default_factory=dict)
 
 
 class HealthOut(BaseModel):
@@ -41,6 +51,7 @@ class HealthOut(BaseModel):
     asr_model: str
     diarization_model: str
     diarization_enabled: bool
+    speaker_recognition_enabled: bool = False
     vad_model: str
     vad_device: str | None
     vad_enabled: bool
@@ -72,6 +83,7 @@ class TtsHealthOut(BaseModel):
 def turn_to_out(turn: Turn, include_words: bool) -> TurnOut:
     return TurnOut(
         speaker=turn.speaker,
+        speaker_label=turn.speaker_label or turn.speaker,
         start=round(turn.start, 3),
         end=round(turn.end, 3),
         text=turn.text,
@@ -98,4 +110,6 @@ def result_to_out(
         # empruntee a son fournisseur. On le tient ici, a la frontiere.
         timing={nom: round(valeur, 3) for nom, valeur in result.timing.items()},
         channels_used=result.channels_used,
+        transcription_id=result.transcription_id,
+        speaker_matches=result.speaker_matches,
     )

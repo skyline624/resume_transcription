@@ -8,7 +8,7 @@ import logging
 import time
 from dataclasses import dataclass, field, replace
 from pathlib import Path
-from typing import Literal
+from typing import TYPE_CHECKING, Literal
 
 from transcription_server.alignment import group_into_turns
 from transcription_server.asr.engine import AsrEngine
@@ -19,10 +19,13 @@ from transcription_server.audio import (
     duration_seconds,
 )
 from transcription_server.chunking import Window, merge_windows, offset_words, plan_windows
-from transcription_server.diarization.engine import DiarizationEngine
+from transcription_server.diarization.engine import DiarizationEngine, SpeakerEmbedding
 from transcription_server.domain import SpeakerSegment, Turn, Word
 from transcription_server.runtime import empty_cache
 from transcription_server.vad.engine import VadEngine
+
+if TYPE_CHECKING:
+    from transcription_server.speakers import SpeakerRegistry
 
 ChannelMode = Literal["mix", "split"]
 
@@ -60,6 +63,8 @@ class TranscriptionResult:
     timing: dict[str, float] = field(default_factory=dict)
     #: Nombre de canaux reellement transcrits separement. Vaut 1 en mode `mix`.
     channels_used: int = 1
+    transcription_id: str | None = None
+    speaker_matches: dict[str, dict] = field(default_factory=dict)
 
 
 def _transcrire(
@@ -166,6 +171,7 @@ def run_pipeline(
     vad: VadEngine | None = None,
     vad_fallback_length_s: float = 5.0,
     vad_fallback_overlap_s: float = 1.0,
+    speaker_registry: "SpeakerRegistry | None" = None,
 ) -> TranscriptionResult:
     """Transcrit un fichier et rend des tours de parole."""
     started = time.perf_counter()
@@ -220,6 +226,7 @@ def run_pipeline(
 
     turns: list[Turn] = []
     locuteurs: list[str] = []
+    embeddings: dict[str, SpeakerEmbedding] = {}
     decalage = 0
     for mots, segments in zip(mots_par_canal, segments_par_canal):
         tours_du_canal = _renumeroter(
@@ -231,6 +238,13 @@ def run_pipeline(
         # quand meme figurer. Son absence de la liste laisserait croire qu'il
         # n'a pas parle, alors qu'il a parle sans etre transcrit.
         noms_du_canal = sorted({s.speaker for s in segments})
+        for label, embedding in getattr(segments, "embeddings", {}).items():
+            if label in noms_du_canal:
+                global_label = (
+                    f"SPEAKER_{int(label.rsplit('_', 1)[-1]) + decalage:02d}"
+                    if decalage else label
+                )
+                embeddings[global_label] = embedding
         locuteurs.extend(
             f"SPEAKER_{int(nom.rsplit('_', 1)[-1]) + decalage:02d}"
             if decalage
@@ -248,7 +262,7 @@ def run_pipeline(
     # fichier a peine plus gros.
     empty_cache()
 
-    return TranscriptionResult(
+    result = TranscriptionResult(
         text=" ".join(t.text for t in turns if t.text),
         language=request.language,
         duration=duration,
@@ -261,3 +275,6 @@ def run_pipeline(
         },
         channels_used=len(canaux),
     )
+    if speaker_registry is not None and request.diarize:
+        return speaker_registry.recognize(result, embeddings)
+    return result

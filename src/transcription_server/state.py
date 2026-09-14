@@ -17,6 +17,7 @@ from transcription_server.summary.engine import SummaryEngine
 from transcription_server.vad.engine import VadEngine
 from transcription_server.tts.client import TtsClient, UnavailableTtsClient
 from transcription_server.tts.profiles import VoiceProfileRepository
+from transcription_server.speakers import SpeakerRegistry
 
 
 @dataclass
@@ -29,6 +30,7 @@ class AppState:
     device_info: dict = field(default_factory=dict)
     tts: TtsClient = field(default_factory=UnavailableTtsClient)
     voice_profiles: VoiceProfileRepository | None = None
+    speaker_registry: SpeakerRegistry | None = None
     lifecycle: Any = None
 
     # Un seul travail sur le GPU a la fois : deux inferences concurrentes se

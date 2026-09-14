@@ -123,6 +123,7 @@ async def health(
         asr_model=state.asr.name,
         diarization_model=state.engine_display_name(state.diarization),
         diarization_enabled=state.settings.enable_diarization,
+        speaker_recognition_enabled=state.speaker_registry is not None,
         vad_model=state.vad.name if state.vad is not None else "none",
         vad_device=state.vad.device if state.vad is not None else None,
         vad_enabled=state.settings.enable_vad,
@@ -204,6 +205,7 @@ async def transcribe(
                 vad=state.vad,
                 vad_fallback_length_s=settings.vad_max_segment_s,
                 vad_fallback_overlap_s=settings.vad_fallback_overlap_s,
+                speaker_registry=state.speaker_registry,
             )
     except AudioDecodeError as exc:
         # str(exc) porte le chemin du fichier temporaire et le stderr brut de

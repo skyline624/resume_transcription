@@ -26,6 +26,12 @@ class Settings(BaseSettings):
     asr_model: str = "nvidia/parakeet-tdt-0.6b-v3"
     diarization_model: str = "pyannote/speaker-diarization-community-1"
     enable_diarization: bool = True
+    enable_speaker_recognition: bool = True
+    speaker_store_path: Path = Path("speakers")
+    speaker_match_threshold: float = Field(default=0.75, gt=0, le=1)
+    speaker_match_margin: float = Field(default=0.08, gt=0, le=1)
+    speaker_min_speech_s: float = Field(default=3.0, gt=0)
+    speaker_pending_ttl_s: float = Field(default=86400.0, gt=0)
 
     # --- Cycle de vie GPU ---
     #

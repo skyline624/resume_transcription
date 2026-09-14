@@ -1,0 +1,24 @@
+[Unit]
+Description=Transcription Parakeet et Qwen3-TTS (RTX 3090)
+After=network-online.target
+ConditionPathIsMountPoint=/mnt/donnees
+
+[Service]
+Type=simple
+WorkingDirectory=/mnt/donnees/resume_transcription
+EnvironmentFile=/mnt/donnees/resume_transcription/.env.studio-linux
+Environment=PATH=/mnt/donnees/resume_transcription/runtime/vendor/usr/bin:/home/pc/.local/bin:/usr/local/bin:/usr/bin:/bin
+Environment=LD_LIBRARY_PATH=/mnt/donnees/resume_transcription/runtime/vendor/usr/lib/x86_64-linux-gnu
+Environment=XDG_RUNTIME_DIR=%t
+Environment=TTS_WORKER_SOCKET=%t/qwen-tts/worker.sock
+RuntimeDirectory=qwen-tts
+RuntimeDirectoryMode=0700
+UMask=0077
+ExecStart=/bin/bash /mnt/donnees/resume_transcription/docker/entrypoint.sh /mnt/donnees/resume_transcription/.venv/bin/python -m transcription_server.main
+Restart=on-failure
+RestartSec=10
+TimeoutStopSec=45
+KillMode=control-group
+
+[Install]
+WantedBy=default.target

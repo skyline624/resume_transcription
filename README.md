@@ -1,5 +1,11 @@
 # Serveur audio Parakeet et Qwen3-TTS
 
+Le déploiement du serveur Ubuntu `studio-linux` est décrit dans
+[le guide Docker dédié](docs/docker-studio-linux.md).
+
+L'API permet de [nommer un locuteur et de le reconnaître dans les prochains
+enregistrements](docs/speaker-recognition.md).
+
 Serveur HTTP local qui transcrit avec **NVIDIA Parakeet**, sépare les locuteurs
 avec **pyannote** et synthétise ou clone une voix avec **Qwen3-TTS 1.7B**.
 

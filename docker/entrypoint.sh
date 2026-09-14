@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-MAIN_PYTHON=/opt/venv-main/bin/python
-QWEN_PYTHON=/opt/venv-qwen/bin/python
+MAIN_PYTHON=${MAIN_PYTHON:-/opt/venv-main/bin/python}
+QWEN_PYTHON=${QWEN_PYTHON:-/opt/venv-qwen/bin/python}
 WORKER_SOCKET="${TTS_WORKER_SOCKET:-/run/qwen-tts/worker.sock}"
 worker_pid=""
 main_pid=""

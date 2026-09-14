@@ -1,0 +1,20 @@
+ARG BASE_IMAGE=transcription-parakeet:windows-migration-2904b2f0
+FROM node:24-alpine AS web-builder
+WORKDIR /web
+COPY web/package.json web/package-lock.json ./
+RUN npm ci
+COPY web/ ./
+RUN npm test && npm run build
+
+# Image existante du projet, transferee depuis Windows (torch 2.11 / CUDA 12.8).
+# Actualiser le code en conservant les deux piles Python deja validees.
+FROM ${BASE_IMAGE}
+WORKDIR /app
+COPY --chown=1000:1000 pyproject.toml README.md ./
+COPY --chown=1000:1000 src/ ./src/
+COPY --chown=1000:1000 qwen_worker/ ./qwen_worker/
+COPY --chown=1000:1000 tests/ ./tests/
+COPY --chown=1000:1000 scripts/ ./scripts/
+COPY --from=web-builder --chown=1000:1000 /web/dist /app/web-dist
+COPY docker/entrypoint.sh /usr/local/bin/entrypoint.sh
+RUN sed -i 's/\r$//' /usr/local/bin/entrypoint.sh && chmod 0755 /usr/local/bin/entrypoint.sh

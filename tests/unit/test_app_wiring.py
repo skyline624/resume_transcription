@@ -23,6 +23,12 @@ from transcription_server.runtime import CudaUnavailableError
 TOKEN = "hf_pour_les_tests"
 
 
+@pytest.fixture(autouse=True)
+def registre_voix_temporaire(tmp_path, monkeypatch, environnement_neutre):
+    """Les tests de cablage ne doivent pas ecrire dans le registre reel."""
+    monkeypatch.setenv("VOICE_STORE_PATH", str(tmp_path / "voices"))
+
+
 @pytest.fixture
 def moteurs_simules(monkeypatch):
     """Remplace les fabriques de modèles et enregistre leurs arguments."""

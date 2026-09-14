@@ -356,6 +356,28 @@ def test_diarize_trie_les_segments(faux_torch):
     ]
 
 
+def test_pyannote4_associe_les_empreintes_selon_labels(faux_torch):
+    annotation = _FausseAnnotation([
+        (_FauxTour(0, 4), None, "SPEAKER_01"),
+        (_FauxTour(4, 9), None, "SPEAKER_00"),
+    ])
+    annotation.labels = lambda: ["SPEAKER_00", "SPEAKER_01"]
+    output = types.SimpleNamespace(speaker_diarization=annotation,
+                                   speaker_embeddings=np.array([[1, 0], [0, 1]]))
+    engine = PyannoteEngine(lambda *args, **kwargs: output, "pyannote/test")
+    segments = engine.diarize(np.zeros(16000), None, None, None)
+    assert segments[0].speaker == "SPEAKER_01"
+    assert segments.embeddings["SPEAKER_00"].values == (1, 0)
+    assert segments.embeddings["SPEAKER_00"].speech_s == 5
+    assert segments.embeddings["SPEAKER_01"].values == (0, 1)
+    assert segments.embeddings["SPEAKER_01"].speech_s == 4
+    # Une seconde inférence n'écrase pas les empreintes du premier résultat.
+    output.speaker_embeddings = None
+    second = engine.diarize(np.zeros(16000), None, None, None)
+    assert second.embeddings == {}
+    assert segments.embeddings["SPEAKER_00"].values == (1, 0)
+
+
 def test_pyannote_passe_sur_cpu_puis_revient_sur_cuda(faux_torch):
     deplacements = []
     faux_torch.device = lambda device: device

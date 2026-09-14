@@ -42,3 +42,5 @@ class Turn:
     end: float
     text: str
     words: tuple[Word, ...]
+    # Etiquette de diarization d'origine, meme apres reconnaissance du nom.
+    speaker_label: str | None = None
