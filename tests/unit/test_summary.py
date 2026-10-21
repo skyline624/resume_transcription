@@ -24,6 +24,7 @@ from transcription_server.summary.engine import (
     UnavailableSummaryEngine,
 )
 from transcription_server.summary.ollama_engine import OllamaSummaryEngine
+from transcription_server.summary.openai_engine import OpenAISummaryEngine
 from transcription_server.summary.prompts import (
     FORMATS,
     construire_prompt,
@@ -176,8 +177,66 @@ def test_ollama_reponse_vide_nomme_le_modele(monkeypatch):
         moteur.summarize("x")
 
 
+# --- Moteur OpenAI (vLLM) ----------------------------------------------------
+
+
+def test_openai_rend_le_texte_avec_une_temperature_basse(monkeypatch):
+    envoye = {}
+
+    def faux_urlopen(requete, timeout=None):
+        envoye["url"] = requete.full_url
+        envoye["corps"] = json.loads(requete.data)
+        envoye["autorisation"] = requete.get_header("Authorization")
+        return _FausseReponse({"choices": [{"message": {"content": "  Compte-rendu.  "}}]})
+
+    monkeypatch.setattr(
+        "transcription_server.summary.openai_engine.urllib.request.urlopen",
+        faux_urlopen,
+    )
+    moteur = OpenAISummaryEngine("http://vllm:8001/v1/", "qwen", 30.0, api_key="sg-test")
+    assert moteur.summarize("consigne") == "Compte-rendu."
+    assert envoye["url"] == "http://vllm:8001/v1/chat/completions"
+    assert envoye["corps"]["model"] == "qwen"
+    assert envoye["corps"]["messages"] == [{"role": "user", "content": "consigne"}]
+    assert envoye["corps"]["stream"] is False
+    assert envoye["corps"]["temperature"] <= 0.3
+    assert envoye["autorisation"] == "Bearer sg-test"
+
+
+def test_openai_injoignable_nomme_le_reglage(monkeypatch):
+    import urllib.error
+
+    def faux_urlopen(requete, timeout=None):
+        raise urllib.error.URLError("connexion refusée")
+
+    monkeypatch.setattr(
+        "transcription_server.summary.openai_engine.urllib.request.urlopen",
+        faux_urlopen,
+    )
+    with pytest.raises(SummaryUnavailableError, match="SUMMARY_BASE_URL"):
+        OpenAISummaryEngine("http://absent/v1", "qwen", 1.0).summarize("x")
+
+
+def test_openai_reponse_vide_nomme_le_modele(monkeypatch):
+    """Un modele qui ne rend que son raisonnement (contenu nul) n'a rien redige."""
+
+    def faux_urlopen(requete, timeout=None):
+        return _FausseReponse({"choices": [{"message": {"content": None}}]})
+
+    monkeypatch.setattr(
+        "transcription_server.summary.openai_engine.urllib.request.urlopen",
+        faux_urlopen,
+    )
+    with pytest.raises(SummaryUnavailableError, match="modele-absent"):
+        OpenAISummaryEngine("http://x/v1", "modele-absent", 1.0).summarize("x")
+
+
 def test_les_moteurs_respectent_le_protocol():
-    for moteur in (StubSummaryEngine(), UnavailableSummaryEngine()):
+    for moteur in (
+        StubSummaryEngine(),
+        UnavailableSummaryEngine(),
+        OpenAISummaryEngine("http://x/v1", "qwen", 1.0),
+    ):
         assert isinstance(moteur, SummaryEngine)
 
 
@@ -344,6 +403,31 @@ def test_redaction_desactivee_donne_503():
         ).status_code
         == 200
     )
+
+
+def test_un_redacteur_distant_ne_decharge_rien():
+    """vLLM a sa propre VRAM : decharger la transcription et la synthese avant
+    chaque compte-rendu ne ferait que les recharger juste apres."""
+
+    class MoteurDistant(StubSummaryEngine):
+        partage_le_gpu = False
+
+    app = create_app(
+        settings=Settings(_env_file=None, enable_diarization=False, device="cpu"),
+        asr=StubAsrEngine([Word("bonjour", 0.0, 0.5)]),
+        diarization=StubDiarizationEngine([]),
+        summary=MoteurDistant("Compte-rendu."),
+    )
+
+    async def interdit(raison):
+        raise AssertionError(f"VRAM liberee pour {raison}")
+
+    app.state.app_state.prepare_external_gpu = interdit
+    reponse = TestClient(app).post(
+        "/summarize", data={"transcript": "[00:00:00] SPEAKER_00 : Bonjour."}
+    )
+    assert reponse.status_code == 200
+    assert reponse.json()["summary"] == "Compte-rendu."
 
 
 def test_health_annonce_le_redacteur(client_avec_redaction):

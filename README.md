@@ -314,6 +314,9 @@ un message actionnable — et la transcription, elle, continue de fonctionner.
 | `MAX_UPLOAD_MB` | `1024` | Taille maximale acceptée |
 | `SUMMARY_MODEL` | `qwen3.8-27b-unc-32k:latest` | Modèle Ollama rédigeant le compte-rendu |
 | `OLLAMA_BASE_URL` | `http://host.docker.internal:11434` | Ollama vu depuis le conteneur |
+| `SUMMARY_BACKEND` | `ollama` | `openai` : rédaction par un serveur `/v1/chat/completions` (vLLM...), sans décharger la transcription ni la synthèse |
+| `SUMMARY_BASE_URL` | `http://host.docker.internal:8001/v1` | Serveur de chat compatible OpenAI (`SUMMARY_BACKEND=openai`) |
+| `SUMMARY_API_KEY` | — | Clé de ce serveur, s'il en exige une |
 | `ENABLE_SUMMARY` | `true` | `false` désactive `/summarize` sans toucher au reste |
 | `SUMMARY_TIMEOUT_S` | `900` | Délai maximal de rédaction |
 

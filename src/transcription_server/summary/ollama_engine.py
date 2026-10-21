@@ -18,6 +18,10 @@ logger = logging.getLogger(__name__)
 class OllamaSummaryEngine:
     """Redige via l'API de generation d'Ollama."""
 
+    # Ollama tourne sur le meme GPU physique : la route libere la VRAM du
+    # conteneur et prend le verrou GPU autour de la generation.
+    partage_le_gpu = True
+
     def __init__(self, base_url: str, model: str, timeout_s: float) -> None:
         self._base_url = base_url.rstrip("/")
         self._model = model

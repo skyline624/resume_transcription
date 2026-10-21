@@ -270,7 +270,16 @@ def build_app(settings: Settings | None = None) -> FastAPI:
         )
         diarization = NullDiarizationEngine()
 
-    if settings.enable_summary:
+    if settings.enable_summary and settings.summary_backend == "openai":
+        from transcription_server.summary.openai_engine import load_openai_engine
+
+        summary = load_openai_engine(
+            base_url=settings.summary_base_url,
+            model=settings.summary_model,
+            timeout_s=settings.summary_timeout_s,
+            api_key=settings.summary_api_key,
+        )
+    elif settings.enable_summary:
         from transcription_server.summary.ollama_engine import load_ollama_engine
 
         summary = load_ollama_engine(

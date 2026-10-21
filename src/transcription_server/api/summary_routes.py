@@ -116,11 +116,16 @@ async def summarize(
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
     try:
-        # Ollama tourne hors du conteneur, mais sur le meme GPU physique. Le
-        # verrou couvre donc aussi sa generation et les poids du conteneur sont
-        # places en RAM avant l'appel.
-        async with state.gpu_lock:
-            await state.prepare_external_gpu("summary")
+        if getattr(state.summary, "partage_le_gpu", True):
+            # Ollama tourne hors du conteneur, mais sur le meme GPU physique. Le
+            # verrou couvre donc aussi sa generation et les poids du conteneur
+            # sont places en RAM avant l'appel.
+            async with state.gpu_lock:
+                await state.prepare_external_gpu("summary")
+                texte = await run_in_threadpool(state.summary.summarize, prompt)
+        else:
+            # Serveur de chat sur sa propre VRAM (vLLM) : la transcription et la
+            # synthese restent chargees, et rien n'attend le verrou GPU.
             texte = await run_in_threadpool(state.summary.summarize, prompt)
     except SummaryUnavailableError as exc:
         logger.warning("Rédaction indisponible : %s", exc)

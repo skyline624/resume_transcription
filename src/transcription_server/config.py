@@ -69,6 +69,13 @@ class Settings(BaseSettings):
     # Un modele de 27B redigeant un compte-rendu de reunion de deux heures
     # depasse largement les delais HTTP habituels.
     summary_timeout_s: float = Field(default=900.0, gt=0)
+    # « ollama » : API native d'Ollama (OLLAMA_BASE_URL), sur le GPU du
+    # conteneur. « openai » : tout serveur /v1/chat/completions, par exemple
+    # vLLM sur des cartes qu'il gere lui-meme (SUMMARY_BASE_URL).
+    summary_backend: Literal["ollama", "openai"] = "ollama"
+    summary_base_url: str = "http://host.docker.internal:8001/v1"
+    # Cle du serveur de chat, si elle est exigee ; jamais renvoyee par /health.
+    summary_api_key: str | None = None
 
     # --- Synthèse vocale Qwen3-TTS ---
     enable_tts: bool = True
