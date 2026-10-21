@@ -200,6 +200,7 @@ def load_nemo_engine(
     model_name: str,
     device: str,
     compute_type: str,
+    cudnn: bool = False,
 ) -> NemoParakeetEngine:
     """Charge le modele et le place sur le peripherique demande."""
     import nemo.collections.asr as nemo_asr
@@ -236,9 +237,20 @@ def load_nemo_engine(
 
     model = build_model()
 
+    def cudnn_context() -> AbstractContextManager:
+        # cuDNN prepare un plan pour chaque forme d'entree jamais vue : 0,6 a
+        # 1 s de plus au premier passage de chaque longueur d'extrait (RTX 3090,
+        # 21/10/2026), sans gain mesure ensuite (de 1 a 120 s d'audio). Les
+        # passages du VAD ont tous une longueur differente : Parakeet s'en passe.
+        # Le drapeau est global au processus, mais le verrou GPU de la
+        # transcription ne laisse tourner qu'un moteur a la fois.
+        if device == "cuda" and not cudnn:
+            return torch.backends.cudnn.flags(enabled=False)
+        return nullcontext()
+
     @contextmanager
     def precision_context():
-        with torch.inference_mode():
+        with torch.inference_mode(), cudnn_context():
             if device == "cuda" and compute_type == "float16":
                 with torch.autocast(device_type="cuda", dtype=torch.float16):
                     yield

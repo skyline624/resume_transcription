@@ -52,7 +52,7 @@ async def create_speech(
                     reference_text=profile.transcript if profile else None,
                 ), segment.pause_after_ms) for segment in segments
             ), http_request=http_request)
-        async with state.gpu_lock:
+        async with state.tts_lock:
             await state.prepare_tts()
             for segment in segments:
                 request = SynthesisRequest(

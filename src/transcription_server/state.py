@@ -39,7 +39,22 @@ class AppState:
     # depuis Python 3.10 : asyncio.Lock ne resout la boucle qu'a la premiere
     # attente reelle, et s'y lie alors definitivement. Corollaire : une meme
     # application ne doit pas servir deux boucles distinctes.
+    # Verrou de la carte de transcription (Parakeet, pyannote, Ollama) ; la
+    # synthese prend `tts_lock`, le meme sauf si TTS_SEPARATE_GPU.
     gpu_lock: asyncio.Lock = field(default_factory=asyncio.Lock)
+    _tts_lock: asyncio.Lock = field(default_factory=asyncio.Lock, repr=False)
+
+    @property
+    def tts_lock(self) -> asyncio.Lock:
+        """Verrou de la synthese : le sien quand son worker a sa propre carte."""
+        return self._tts_lock if self.settings.tts_separate_gpu else self.gpu_lock
+
+    def _shares_gpu_with_tts(self) -> bool:
+        """Liberer la transcription pour la synthese (ou l'inverse) ne rend de
+        la VRAM que si elles partagent une carte. Sur deux cartes, elles
+        tournent en meme temps : liberer l'autre la ferait tomber en plein
+        travail."""
+        return not self.settings.tts_separate_gpu
 
     def _transcription_gpu_resident(self) -> bool:
         """Vrai quand les moteurs de transcription doivent rester en VRAM.
@@ -57,13 +72,20 @@ class AppState:
         """En mode lazy, laisse le timer gerer la residence du TTS."""
         if self.settings.enable_lazy_gpu:
             return
-        if self.settings.enable_tts and not self._transcription_gpu_resident():
+        if (self.settings.enable_tts and self._shares_gpu_with_tts()
+                and not self._transcription_gpu_resident()):
             await self.tts.unload(reason="transcription")
 
     async def prepare_external_gpu(self, reason: str) -> None:
         """Libere la VRAM du conteneur avant un moteur GPU externe (Ollama)."""
         if self.settings.enable_tts and not self._transcription_gpu_resident():
-            await self.tts.unload(reason=reason)
+            if self.tts_lock is self.gpu_lock:
+                await self.tts.unload(reason=reason)
+            else:
+                # L'appelant tient le verrou de la transcription : la synthese,
+                # qui a le sien, ne doit pas perdre son worker en pleine voix.
+                async with self.tts_lock:
+                    await self.tts.unload(reason=reason)
         if not self._transcription_gpu_resident():
             await asyncio.to_thread(self._release_transcription_gpu)
 
@@ -71,7 +93,7 @@ class AppState:
         """En mode lazy, conserve le STT jusqu'au delai d'inactivite."""
         if self.settings.enable_lazy_gpu:
             return
-        if not self._transcription_gpu_resident():
+        if self._shares_gpu_with_tts() and not self._transcription_gpu_resident():
             await asyncio.to_thread(self._release_transcription_gpu)
 
     def _release_transcription_gpu(self) -> None:

@@ -200,11 +200,14 @@ class GpuLifecycleManager:
         interval_s: float,
         clock: Callable[[], float] | None = None,
         gpu_lock: asyncio.Lock | None = None,
+        tts_lock: asyncio.Lock | None = None,
     ) -> None:
         self._engines = engines
         self._tts = tts
         self._interval_s = interval_s
         self._gpu_lock = gpu_lock or asyncio.Lock()
+        # Synthese sur sa propre carte (TTS_SEPARATE_GPU) : son propre verrou.
+        self._tts_lock = tts_lock or self._gpu_lock
         self._clock = clock or (lambda: __import__("time").monotonic())
         self._task = None
         self._stopping = False
@@ -230,18 +233,35 @@ class GpuLifecycleManager:
                 self._task = None
 
     async def unload_idle(self) -> None:
-        """Decharge pyannote puis Parakeet, puis le worker TTS si inactif."""
+        """Decharge pyannote puis Parakeet, puis le worker TTS si inactif.
+
+        Chacun attend la fin du travail en cours sur sa carte : avec un verrou
+        par carte, une voix en cours ne retient pas le dechargement de
+        Parakeet, et l'inverse.
+        """
+        if self._tts_lock is self._gpu_lock:
+            async with self._gpu_lock:
+                await self._unload_idle_locked()
+            return
         async with self._gpu_lock:
-            await self._unload_idle_locked()
+            await self._unload_engines_locked()
+        async with self._tts_lock:
+            await self._unload_tts_locked()
 
     async def _unload_idle_locked(self) -> None:
         """Reverifie l'inactivite apres la fin du travail GPU en cours."""
+        await self._unload_engines_locked()
+        await self._unload_tts_locked()
+
+    async def _unload_engines_locked(self) -> None:
         for engine in self._engines:
             try:
                 if await asyncio.to_thread(engine.unload_if_idle):
                     logger.info("Moteur %s decharge apres inactivite.", engine.name)
             except Exception:
                 logger.exception("Le dechargement de %s a echoue.", engine.name)
+
+    async def _unload_tts_locked(self) -> None:
         if self._tts is not None:
             try:
                 if self._tts.unload_if_idle():

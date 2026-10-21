@@ -150,8 +150,9 @@ def test_transcribe_execute_nemo_dans_le_contexte_de_precision():
     assert etat["actif"] is False
 
 
-def test_loader_fp16_conserve_les_poids_et_utilise_autocast(monkeypatch):
-    etat = {"autocast": False, "cuda_graphs_disabled": False}
+@pytest.mark.parametrize("cudnn", [False, True])
+def test_loader_fp16_conserve_les_poids_et_utilise_autocast(monkeypatch, cudnn):
+    etat = {"autocast": False, "cuda_graphs_disabled": False, "cudnn": True}
 
     @contextmanager
     def faux_autocast(*args, **kwargs):
@@ -164,6 +165,14 @@ def test_loader_fp16_conserve_les_poids_et_utilise_autocast(monkeypatch):
     @contextmanager
     def faux_inference_mode():
         yield
+
+    @contextmanager
+    def faux_flags(enabled):
+        etat["cudnn"] = enabled
+        try:
+            yield
+        finally:
+            etat["cudnn"] = True
 
     class FauxModele:
         def to(self, device):
@@ -180,6 +189,8 @@ def test_loader_fp16_conserve_les_poids_et_utilise_autocast(monkeypatch):
 
         def transcribe(self, fichiers, timestamps):
             assert etat["autocast"] is True
+            # cuDNN coupe pendant l'inference, sauf ASR_CUDNN=true.
+            assert etat["cudnn"] is cudnn
             return [
                 _HypotheseNeMo(
                     [{"word": "bonjour", "start": 0.0, "end": 0.5}]
@@ -206,17 +217,20 @@ def test_loader_fp16_conserve_les_poids_et_utilise_autocast(monkeypatch):
     module_torch.float16 = object()
     module_torch.autocast = faux_autocast
     module_torch.inference_mode = faux_inference_mode
+    module_torch.backends = types.SimpleNamespace(cudnn=types.SimpleNamespace(flags=faux_flags))
     monkeypatch.setitem(sys.modules, "torch", module_torch)
 
     moteur = load_nemo_engine(
         model_name="nvidia/parakeet",
         device="cuda",
         compute_type="float16",
+        cudnn=cudnn,
     )
     assert etat["cuda_graphs_disabled"] is True
 
     audio = np.zeros(16000, dtype=np.float32)
     assert moteur.transcribe(audio, language=None)[0].text == "bonjour"
+    assert etat["cudnn"] is True  # retabli apres l'inference
 
 
 def test_sortie_anglaise_est_redecoupee_quand_le_francais_est_demande():

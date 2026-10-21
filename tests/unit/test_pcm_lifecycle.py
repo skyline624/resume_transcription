@@ -23,12 +23,12 @@ async def test_deconnexion_avant_premier_audio_annule_et_libere_verrou():
     async def receive():
         await started.wait()
         return {"type": "http.disconnect"}
-    state = SimpleNamespace(gpu_lock=asyncio.Lock(), prepare_tts=AsyncMock(), tts=SimpleNamespace(stream=stream))
+    state = SimpleNamespace(tts_lock=asyncio.Lock(), prepare_tts=AsyncMock(), tts=SimpleNamespace(stream=stream))
     with pytest.raises(HTTPException) as error:
         await pcm_response(state, [(None, 0)], http_request=SimpleNamespace(receive=receive))
     assert error.value.status_code == 499
     assert closed == [True]
-    assert not state.gpu_lock.locked()
+    assert not state.tts_lock.locked()
 
 
 @pytest.mark.asyncio
@@ -40,13 +40,13 @@ async def test_fermeture_pendant_lecture_ferme_source_et_reference():
             yield b"34"
         finally:
             closed.append("source")
-    state = SimpleNamespace(gpu_lock=asyncio.Lock(), prepare_tts=AsyncMock(), tts=SimpleNamespace(stream=stream))
+    state = SimpleNamespace(tts_lock=asyncio.Lock(), prepare_tts=AsyncMock(), tts=SimpleNamespace(stream=stream))
     response = await pcm_response(state, [(None, 0)], cleanup=lambda: closed.append("reference"))
-    assert state.gpu_lock.locked()
+    assert state.tts_lock.locked()
     assert await anext(response.body_iterator) == b"12"
     await response.body_iterator.aclose()
     assert closed == ["source", "reference"]
-    assert not state.gpu_lock.locked()
+    assert not state.tts_lock.locked()
 
 
 @pytest.mark.asyncio

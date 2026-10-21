@@ -34,10 +34,10 @@ def moteurs_simules(monkeypatch):
     """Remplace les fabriques de modèles et enregistre leurs arguments."""
     appels = {"asr": [], "diarization": [], "vad": []}
 
-    def faux_load_nemo(model_name, device, compute_type):
+    def faux_load_nemo(model_name, device, compute_type, cudnn=None):
         print("load:asr")
         appels["asr"].append(
-            {"model_name": model_name, "device": device, "compute_type": compute_type}
+            {"model_name": model_name, "device": device, "compute_type": compute_type, "cudnn": cudnn}
         )
         return StubAsrEngine([Word("bonjour", 0.0, 0.5)], name=model_name)
 
@@ -166,6 +166,7 @@ def test_les_reglages_sont_transmis_aux_fabriques(monkeypatch, moteurs_simules):
         "model_name": reglages.asr_model,
         "device": "cuda",
         "compute_type": "float32",
+        "cudnn": False,
     }
 
 

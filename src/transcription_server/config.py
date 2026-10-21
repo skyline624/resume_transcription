@@ -46,6 +46,9 @@ class Settings(BaseSettings):
 
     device: Literal["cuda", "cpu"] = "cuda"
     compute_type: Literal["float16", "float32"] = "float16"
+    # cuDNN pour Parakeet. Coupe par defaut : il coutait 0,6 a 1 s au premier
+    # passage de chaque longueur d'extrait, sans gain mesure ensuite (RTX 3090).
+    asr_cudnn: bool = False
 
     chunk_length_s: float = Field(default=480.0, gt=0)
     chunk_overlap_s: float = Field(default=15.0, ge=0)
@@ -86,6 +89,10 @@ class Settings(BaseSettings):
     tts_default_language: str = "fr"
     tts_precision: Literal["bfloat16"] = "bfloat16"
     tts_idle_unload_s: float = Field(default=300.0, ge=0)
+    # Le worker de synthese tourne sur une autre carte que la transcription
+    # (QWEN_PYTHON qui lui fixe CUDA_VISIBLE_DEVICES) : il prend alors son
+    # propre verrou GPU, et une transcription n'attend plus la fin d'une voix.
+    tts_separate_gpu: bool = False
     tts_load_timeout_s: float = Field(default=300.0, gt=0)
     tts_generation_timeout_s: float = Field(default=900.0, gt=0)
     tts_max_input_chars: int = Field(default=4096, gt=0, le=4096)

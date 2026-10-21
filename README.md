@@ -294,6 +294,7 @@ un message actionnable — et la transcription, elle, continue de fonctionner.
 | `ENABLE_DIARIZATION` | `true` | `false` permet de démarrer sans token |
 | `DEVICE` | `cuda` | `cuda` ou `cpu` |
 | `COMPUTE_TYPE` | `float16` | `float16` ou `float32` |
+| `ASR_CUDNN` | `false` | cuDNN pour Parakeet. Coupé : sinon chaque longueur d'extrait jamais vue coûte 0,6 à 1 s de plus au premier passage (RTX 3090), sans gain mesuré ensuite |
 | `ENABLE_VAD` | `true` | Active la détection de parole Silero avant Parakeet |
 | `VAD_DEVICE` | `cpu` | `cpu` recommandé ; `cuda` reste disponible |
 | `VAD_MAX_SEGMENT_S` | `5` | Durée maximale envoyée à Parakeet par passage parlé |
@@ -308,6 +309,7 @@ un message actionnable — et la transcription, elle, continue de fonctionner.
 | `TTS_PRECISION` | `bfloat16` | Précision GPU du worker |
 | `TTS_ATTENTION_IMPLEMENTATION` | `sdpa` | Attention PyTorch, sans FlashAttention obligatoire |
 | `TTS_IDLE_UNLOAD_S` | `300` | Délai avant restitution automatique de la VRAM |
+| `TTS_SEPARATE_GPU` | `false` | `true` quand le worker tourne sur une autre carte que la transcription (via `QWEN_PYTHON`) : la synthèse prend son propre verrou GPU, et une transcription n'attend plus la fin d'une voix |
 | `TTS_LOAD_TIMEOUT_S` / `TTS_GENERATION_TIMEOUT_S` | `300` / `900` | Délais worker |
 | `VOICE_STORE_PATH` | `/app/voices` | Volume persistant des profils vocaux consentis |
 | `HOST` / `PORT` | `0.0.0.0` / `8000` | Écoute **dans** le conteneur |

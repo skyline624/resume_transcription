@@ -18,7 +18,7 @@ async def pcm_response(
     http_request: Request | None = None,
 ) -> StreamingResponse:
     async def generate():
-        async with state.gpu_lock:
+        async with state.tts_lock:
             await state.prepare_tts()
             pause_before = 0
             for request, pause_ms in requests:

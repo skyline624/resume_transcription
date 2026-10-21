@@ -139,11 +139,13 @@ def create_app(
 # telecharger 2,6 Go de poids.
 
 
-def _load_nemo_engine(model_name: str, device: str, compute_type: str) -> AsrEngine:
+def _load_nemo_engine(
+    model_name: str, device: str, compute_type: str, cudnn: bool = False
+) -> AsrEngine:
     from transcription_server.asr.nemo_parakeet import load_nemo_engine
 
     return load_nemo_engine(
-        model_name=model_name, device=device, compute_type=compute_type
+        model_name=model_name, device=device, compute_type=compute_type, cudnn=cudnn
     )
 
 
@@ -207,6 +209,7 @@ def build_app(settings: Settings | None = None) -> FastAPI:
                 model_name=settings.asr_model,
                 device=device,
                 compute_type=settings.compute_type,
+                cudnn=settings.asr_cudnn,
             )
             _warmup(engine, device)
             return engine
@@ -235,6 +238,7 @@ def build_app(settings: Settings | None = None) -> FastAPI:
             model_name=settings.asr_model,
             device=device,
             compute_type=settings.compute_type,
+            cudnn=settings.asr_cudnn,
         )
 
     vad = None
@@ -325,6 +329,7 @@ def build_app(settings: Settings | None = None) -> FastAPI:
             tts,
             interval_s=max(1.0, min(settings.gpu_idle_unload_s, settings.tts_idle_unload_s) / 4.0),
             gpu_lock=application.state.app_state.gpu_lock,
+            tts_lock=application.state.app_state.tts_lock,
         )
         application.state.app_state.lifecycle = lifecycle
         application.router.on_startup.append(lifecycle.start)

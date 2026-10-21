@@ -128,7 +128,7 @@ async def clone_once(
             try:
                 segments = segment_text(input, 500)
                 chunks = []
-                async with state.gpu_lock:
+                async with state.tts_lock:
                     await state.prepare_tts()
                     for segment in segments:
                         result = await state.tts.synthesize(SynthesisRequest(
