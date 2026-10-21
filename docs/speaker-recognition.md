@@ -95,6 +95,43 @@ Les erreurs donnent 404 pour une transcription expirée/inconnue ou un label
 absent, 400 pour une empreinte inexploitable ou un nom déjà pris au renommage,
 422 pour un corps invalide, et 503 si le registre est désactivé.
 
+## Clients qui gardent leurs empreintes (registre central)
+
+Un client comme TalkTrack garde avec chaque enregistrement les empreintes de
+ses locuteurs, et peut donc nommer une voix des semaines plus tard, au-delà
+des 24 heures de `identify`. Le registre devient alors la base centrale des
+personnes, commune à tous les clients et à l'interface web.
+
+- `POST /transcribe` avec `return_embeddings=true` ajoute `speaker_embeddings` :
+  `{SPEAKER_xx: {model, vector, speech_s}}`, avec un vecteur normalisé (au
+  millionième) ou `null` si le registre le refuserait. Sans ce champ, la
+  réponse ne change pas.
+- `POST /speakers/references` rattache une empreinte à une personne :
+  `{source, speaker, model, vector, speech_s?}` et **une seule** cible, parmi
+  `name`, `person_id` ou `auto: true`. Avec `auto`, une voix automatique
+  « Voix N » est créée pour un inconnu ; son numéro n'est jamais réattribué.
+  La clé (`source`, `speaker`) appartient au client, par exemple
+  `talktrack:recording_20261021_100000` et `SPEAKER_00`. Renvoyer la même clé
+  vers une autre personne déplace la référence.
+- `DELETE /speakers/references?source=…&speaker=…` détache une empreinte
+  (204, idempotent).
+- `POST /speakers/{id}/merge` avec `{into}` fusionne une personne dans une
+  autre. Un alias garde l'ancien id valable, et `GET /speakers/aliases` les
+  liste sous la forme `{ancien: actuel}`.
+- `POST /speakers/import` importe une bibliothèque entière en une
+  transaction : `{model, next_auto_number?, persons: [{key, name, auto,
+  references: [{source, speaker, vector}]}]}`. Un même nom désigne la même
+  personne, et l'import peut être relancé.
+- `GET /speakers/info` donne l'étiquette des empreintes du moteur actif
+  (`model`), ainsi que le seuil, la marge, la durée minimale et le nombre de
+  références par personne.
+
+Les personnes automatiques portent `auto: true` dans `GET /speakers` ; les
+renommer (`PATCH`) en fait des personnes nommées. Une personne qui n'a plus
+aucune référence disparaît, quelle que soit la route qui lui a retiré la
+dernière. Les correspondances automatiques n'ajoutent toujours aucune
+référence.
+
 ## Conservation et réglages
 
 Sur `studio-linux`, la base SQLite est conservée dans

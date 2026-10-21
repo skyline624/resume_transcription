@@ -30,6 +30,15 @@ class SpeakerMatchOut(BaseModel):
     enrollable: bool = False
 
 
+class SpeakerEmbeddingOut(BaseModel):
+    model: str
+    #: Normalise ; nul quand le registre refuserait l'empreinte (parole trop
+    #: courte, vecteur invalide). Au millionieme : au millieme, l'erreur
+    #: d'arrondi deplacerait les similarites d'environ 0,005.
+    vector: list[float] | None = None
+    speech_s: float
+
+
 class TranscriptionOut(BaseModel):
     text: str
     language: str | None = None
@@ -43,6 +52,8 @@ class TranscriptionOut(BaseModel):
     channels_used: int = 1
     transcription_id: str | None = None
     speaker_matches: dict[str, SpeakerMatchOut] = Field(default_factory=dict)
+    #: Seulement avec `return_embeddings` : absent du corps sinon.
+    speaker_embeddings: dict[str, SpeakerEmbeddingOut] | None = None
 
 
 class HealthOut(BaseModel):
@@ -112,4 +123,19 @@ def result_to_out(
         channels_used=result.channels_used,
         transcription_id=result.transcription_id,
         speaker_matches=result.speaker_matches,
+        speaker_embeddings=None if result.speaker_embeddings is None else {
+            label: SpeakerEmbeddingOut(
+                model=entry["model"],
+                vector=None if entry["vector"] is None
+                else [round(value, 6) for value in entry["vector"]],
+                speech_s=entry["speech_s"],
+            )
+            for label, entry in result.speaker_embeddings.items()
+        },
     )
+
+
+def transcription_body(out: TranscriptionOut) -> dict:
+    """Le corps JSON ; sans `speaker_embeddings` quand elles n'ont pas ete demandees."""
+    exclude = {"speaker_embeddings"} if out.speaker_embeddings is None else set()
+    return out.model_dump(mode="json", exclude=exclude)

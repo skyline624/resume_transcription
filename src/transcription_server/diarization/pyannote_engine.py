@@ -13,6 +13,7 @@ import numpy as np
 from transcription_server.audio import SAMPLE_RATE
 from transcription_server.diarization.engine import DiarizationSegments, SpeakerEmbedding
 from transcription_server.domain import SpeakerSegment
+from transcription_server.speakers import embedding_model_id
 
 logger = logging.getLogger(__name__)
 
@@ -143,7 +144,7 @@ class PyannoteEngine:
                 durations = _clean_speech_durations(segments)
                 for label, vector in zip(labels, vectors):
                     embeddings[str(label)] = SpeakerEmbedding(
-                        model=f"{self._name}|pyannote4-centroids-v1",
+                        model=embedding_model_id(self._name),
                         values=tuple(float(value) for value in vector),
                         speech_s=durations.get(str(label), 0.0),
                     )

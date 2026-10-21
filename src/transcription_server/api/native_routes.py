@@ -14,6 +14,7 @@ from transcription_server.api.schemas import (
     TtsHealthOut,
     TranscriptionOut,
     result_to_out,
+    transcription_body,
 )
 from transcription_server.tts.domain import TtsUnavailableError
 from transcription_server.audio import AudioDecodeError
@@ -151,6 +152,7 @@ async def transcribe(
     word_timestamps: Annotated[bool, Form()] = True,
     response_format: Annotated[ResponseFormat, Form()] = "json",
     channels: Annotated[ChannelMode, Form()] = "mix",
+    return_embeddings: Annotated[bool, Form()] = False,
 ):
     if num_speakers is not None and (
         min_speakers is not None or max_speakers is not None
@@ -198,6 +200,7 @@ async def transcribe(
                     num_speakers=num_speakers,
                     min_speakers=min_speakers,
                     max_speakers=max_speakers,
+                    return_embeddings=return_embeddings,
                 ),
                 chunk_length_s=settings.chunk_length_s,
                 chunk_overlap_s=settings.chunk_overlap_s,
@@ -226,4 +229,4 @@ async def transcribe(
         return PlainTextResponse(to_vtt(result.turns))
     if response_format == "dialogue":
         return PlainTextResponse(to_dialogue(result.turns))
-    return result_to_out(result, include_words=word_timestamps)
+    return transcription_body(result_to_out(result, include_words=word_timestamps))

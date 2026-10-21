@@ -245,3 +245,193 @@ def test_renommage_en_doublon_refuse(tmp_path):
     with pytest.raises(ValueError, match="déjà"):
         registry.rename(bob["id"], "ALICE")
     assert registry.list()[1]["name"] == "Bob"
+
+
+# --- Registre central : references gardees par le client (TalkTrack) ---
+
+MODEL = "test"
+
+
+def reference(registry, source="talktrack:rec_a", speaker=S0, values=(1.0, 0.0), **target):
+    return registry.add_reference(source, speaker, MODEL, list(values), **target)
+
+
+def test_reference_par_nom_par_id_et_voix_automatique(tmp_path):
+    registry = SpeakerRegistry(tmp_path)
+    alice = reference(registry, name="Alice")
+    assert (alice["name"], alice["samples"], alice["auto"]) == ("Alice", 1, False)
+    again = reference(registry, speaker=S1, values=(0.98, 0.1), person_id=alice["id"])
+    assert again["samples"] == 2
+    voix = reference(registry, source="talktrack:rec_b", values=(0, 1), auto=True)
+    assert (voix["name"], voix["auto"]) == ("Voix 1", True)
+    # Reconnue a la transcription suivante, comme une personne nommee.
+    assert registry.recognize(result(), {S0: voice((0.0, 1.0))}).speakers == ["Voix 1"]
+    assert registry.recognize(result(), {S0: voice((1.0, 0.0))}).speakers == ["Alice"]
+
+
+def test_numero_automatique_jamais_reattribue(tmp_path):
+    registry = SpeakerRegistry(tmp_path)
+    first = reference(registry, auto=True)
+    registry.delete(first["id"])
+    assert reference(registry, auto=True)["name"] == "Voix 2"
+    reference(registry, source="s2", name="Voix 3")  # un nom deja pris est saute
+    assert reference(registry, source="s3", auto=True)["name"] == "Voix 4"
+
+
+def test_renvoyer_une_reference_la_deplace(tmp_path):
+    registry = SpeakerRegistry(tmp_path)
+    voix = reference(registry, auto=True)
+    bob = reference(registry, name="Bob")  # meme cle : la reference passe a Bob
+    assert bob["samples"] == 1
+    assert [p["name"] for p in registry.list()] == ["Bob"]  # la voix vide disparait
+    assert voix["id"] not in {p["id"] for p in registry.list()}
+
+
+@pytest.mark.parametrize("target", [{}, {"name": "A", "auto": True},
+                                     {"name": "A", "person_id": str(uuid4())}])
+def test_une_seule_cible(tmp_path, target):
+    with pytest.raises(ValueError, match="une seule cible"):
+        reference(SpeakerRegistry(tmp_path), **target)
+
+
+def test_reference_inutilisable_ou_personne_inconnue(tmp_path):
+    registry = SpeakerRegistry(tmp_path)
+    with pytest.raises(ValueError, match="inutilisable"):
+        reference(registry, values=(0.0, 0.0), name="Alice")
+    with pytest.raises(ValueError, match="inutilisable"):
+        registry.add_reference("s", S0, MODEL, [1.0, 0.0], speech_s=1.0, name="Alice")
+    with pytest.raises(KeyError):
+        reference(registry, person_id=str(uuid4()))
+    assert registry.list() == []
+
+
+def test_detacher_une_reference(tmp_path):
+    registry = SpeakerRegistry(tmp_path)
+    alice = reference(registry, name="Alice")
+    reference(registry, speaker=S1, person_id=alice["id"])
+    registry.remove_reference("talktrack:rec_a", S0)
+    registry.remove_reference("talktrack:rec_a", S0)  # idempotent
+    assert registry.list()[0]["samples"] == 1
+    registry.remove_reference("talktrack:rec_a", S1)
+    assert registry.list() == []
+
+
+def test_fusion_alias_et_suppression(tmp_path):
+    registry = SpeakerRegistry(tmp_path)
+    alice = reference(registry, name="Alice")
+    voix = reference(registry, source="s2", values=(0.9, 0.3), auto=True)
+    other = reference(registry, source="s3", values=(0.8, 0.5), auto=True)
+    registry.merge(other["id"], voix["id"])
+    merged = registry.merge(voix["id"], alice["id"])
+    assert (merged["name"], merged["samples"]) == ("Alice", 3)
+    assert registry.aliases() == {voix["id"]: alice["id"], other["id"]: alice["id"]}
+    # Un ancien id reste une cible valable.
+    assert reference(registry, source="s4", person_id=other["id"])["id"] == alice["id"]
+    with pytest.raises(ValueError):
+        registry.merge(alice["id"], alice["id"])
+    with pytest.raises(KeyError):
+        registry.merge(str(uuid4()), alice["id"])
+    registry.delete(alice["id"])
+    assert registry.aliases() == {}
+
+
+def test_renommer_une_voix_automatique_la_nomme(tmp_path):
+    registry = SpeakerRegistry(tmp_path)
+    voix = reference(registry, auto=True)
+    assert registry.rename(voix["id"], "Corvus")["auto"] is False
+
+
+def test_import_relancable_et_joint_les_memes_noms(tmp_path):
+    registry = SpeakerRegistry(tmp_path)
+    existing = reference(registry, source="s0", name="Alice")
+    persons = [
+        {"key": "p_a", "name": "alice", "auto": False,
+         "references": [{"source": "talktrack:r1", "speaker": S0, "vector": [1.0, 0.1]}]},
+        {"key": "p_v", "name": "Voix 5", "auto": True, "auto_number": 5,
+         "references": [{"source": "talktrack:r1", "speaker": S1, "vector": [0.1, 1.0]}]},
+        {"key": "p_e", "name": "Sans empreinte", "references": []},
+    ]
+    first = registry.import_people(MODEL, persons, next_auto_number=6)
+    assert first["p_a"]["id"] == existing["id"]
+    assert first["p_a"]["samples"] == 2
+    assert first["p_v"]["auto"] is True
+    assert "p_e" not in first
+    assert registry.import_people(MODEL, persons, next_auto_number=6) == first
+    assert reference(registry, source="s9", auto=True)["name"] == "Voix 6"
+
+
+def test_import_refuse_ne_change_rien(tmp_path):
+    registry = SpeakerRegistry(tmp_path)
+    with pytest.raises(ValueError):
+        registry.import_people(MODEL, [
+            {"key": "a", "name": "Alice", "references": [
+                {"source": "s", "speaker": S0, "vector": [1.0, 0.0]}]},
+            {"key": "b", "name": "Bob", "references": [
+                {"source": "s", "speaker": S1, "vector": [0.0, 0.0]}]}])
+    assert registry.list() == []
+
+
+def test_registre_existant_sans_colonne_auto(tmp_path):
+    with sqlite3.connect(tmp_path / "speakers.sqlite3") as db:
+        db.executescript("""
+            CREATE TABLE persons (id TEXT PRIMARY KEY, name TEXT NOT NULL,
+                                  name_key TEXT UNIQUE NOT NULL);
+            INSERT INTO persons VALUES ('p1', 'Alice', 'alice');
+            CREATE TABLE samples (transcription_id TEXT NOT NULL, label TEXT NOT NULL,
+                person_id TEXT NOT NULL REFERENCES persons(id) ON DELETE CASCADE,
+                model TEXT NOT NULL, vector TEXT NOT NULL, created REAL NOT NULL,
+                PRIMARY KEY (transcription_id, label));
+            INSERT INTO samples VALUES ('t', 'SPEAKER_00', 'p1', 'test', '[1.0, 0.0]', 0);
+        """)
+    db.close()
+    registry = SpeakerRegistry(tmp_path)
+    assert registry.list() == [{"id": "p1", "name": "Alice", "samples": 1, "auto": False,
+                                "last_seen": "1970-01-01T00:00:00+00:00"}]
+    assert registry.recognize(result(), {S0: voice()}).speakers == ["Alice"]
+
+
+def test_cycle_http_du_registre_central(client):
+    info = client.get("/speakers/info").json()
+    assert info["model"] == "pyannote/speaker-diarization-community-1|pyannote4-centroids-v1"
+    assert info["max_references"] == 5
+    body = {"source": "talktrack:rec", "speaker": S0, "model": "test", "vector": [1, 0],
+            "speech_s": 12.0, "auto": True}
+    voix = client.post("/speakers/references", json=body)
+    assert voix.status_code == 200, voix.text
+    assert voix.json()["name"] == "Voix 1"
+    assert client.post("/speakers/references", json={**body, "name": "Alice"}).status_code == 422
+    named = {k: v for k, v in body.items() if k != "auto"}
+    alice = client.post("/speakers/references",
+                        json={**named, "speaker": S1, "vector": [0.9, 0.1], "name": "Alice"}).json()
+    merged = client.post(f"/speakers/{voix.json()['id']}/merge", json={"into": alice["id"]})
+    assert merged.json()["samples"] == 2
+    assert client.get("/speakers/aliases").json() == {voix.json()["id"]: alice["id"]}
+    assert transcribe(client).json()["speakers"] == ["Alice"]
+    gone = client.delete("/speakers/references",
+                         params={"source": "talktrack:rec", "speaker": S0})
+    assert gone.status_code == 204
+    assert client.get("/speakers").json()[0]["samples"] == 1
+    imported = client.post("/speakers/import", json={"model": "test", "persons": [
+        {"key": "k", "name": "Bob", "references": [
+            {"source": "talktrack:r2", "speaker": S0, "vector": [0, 1]}]}]})
+    assert imported.status_code == 200, imported.text
+    assert imported.json()["persons"]["k"]["name"] == "Bob"
+    assert client.post(f"/speakers/{uuid4()}/merge", json={"into": alice["id"]}).status_code == 404
+
+
+def test_empreintes_rendues_sur_demande(client):
+    plain = transcribe(client).json()
+    assert "speaker_embeddings" not in plain
+    data = transcribe(client, return_embeddings="true").json()
+    entry = data["speaker_embeddings"][S0]
+    assert entry["model"] == "test"
+    assert entry["speech_s"] == 5.0
+    assert entry["vector"] == [1.0, 0.0]
+    assert data["speaker_matches"][S0]["enrollable"]
+
+
+def test_empreintes_trop_courtes_sans_vecteur():
+    from transcription_server.speakers import export_embeddings
+    exported = export_embeddings([S0, S1], {S0: voice((3.0, 4.0)), S1: voice(speech_s=1.0)}, 3.0)
+    assert exported[S0]["vector"] == [0.6, 0.8]
+    assert exported[S1] == {"model": "test", "vector": None, "speech_s": 1.0}

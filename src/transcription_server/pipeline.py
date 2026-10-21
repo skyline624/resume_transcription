@@ -22,6 +22,7 @@ from transcription_server.chunking import Window, merge_windows, offset_words, p
 from transcription_server.diarization.engine import DiarizationEngine, SpeakerEmbedding
 from transcription_server.domain import SpeakerSegment, Turn, Word
 from transcription_server.runtime import empty_cache
+from transcription_server.speakers import export_embeddings
 from transcription_server.vad.engine import VadEngine
 
 if TYPE_CHECKING:
@@ -51,6 +52,9 @@ class TranscriptionRequest:
     #: pistes portent des sources distinctes, ou le repliement superposerait
     #: deux paroles simultanees et rendrait les deux inintelligibles.
     channel_mode: ChannelMode = "mix"
+    #: Rendre les empreintes de chaque locuteur, pour un client qui les garde
+    #: avec ses enregistrements et les rattache plus tard a une personne.
+    return_embeddings: bool = False
 
 
 @dataclass(frozen=True)
@@ -65,6 +69,8 @@ class TranscriptionResult:
     channels_used: int = 1
     transcription_id: str | None = None
     speaker_matches: dict[str, dict] = field(default_factory=dict)
+    #: label -> {model, vector normalise ou None, speech_s} ; None si non demande.
+    speaker_embeddings: dict[str, dict] | None = None
 
 
 def _transcrire(
@@ -275,6 +281,12 @@ def run_pipeline(
         },
         channels_used=len(canaux),
     )
+    if request.diarize and request.return_embeddings:
+        # Avant la reconnaissance, qui remplace les labels par les noms.
+        # 3 s : le defaut du registre, quand la reconnaissance est desactivee.
+        minimum = speaker_registry.minimum_s if speaker_registry is not None else 3.0
+        result = replace(result, speaker_embeddings=export_embeddings(
+            result.speakers, embeddings, minimum))
     if speaker_registry is not None and request.diarize:
         return speaker_registry.recognize(result, embeddings)
     return result
